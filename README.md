@@ -118,12 +118,22 @@ once, if the avatar rig is itself driven by an Animator). Everything downstream 
 transparent, non-interactive duplicate at the matching joint whenever a primitive is placed -
 already works without further changes.
 
-**Until then**, the scene has a visible `Avatar Stand-In (Preview)` GameObject - a second, static
-copy of the line-skeleton visual (both its bone segments and its 12 hinge-joint anchors) standing a
-couple meters beside the table - so the duplicate feature can actually be seen working today.
+**Until then**, the scene has a visible `Avatar Stand-In (Preview)` GameObject - a second copy of
+the line-skeleton visual (both its bone segments and its 12 hinge-joint anchors) standing a couple
+meters beside the table - so the duplicate feature can actually be seen working today.
 `AvatarBodyTarget (Placeholder)`'s joint slots are wired to this stand-in's matching bones/joints
 (by name), so placing a primitive on the real skeleton - on a bone or right at a hinge joint -
-mirrors a faint transparent copy onto the corresponding spot on the stand-in. This is **not** real
-body tracking - the stand-in never moves - it's purely a placeholder to preview/test the mirroring
-logic. When the Movement SDK is installed, repoint `AvatarBodyTarget`'s joint slots at the real
-tracked bones (or just delete the stand-in and its wiring) to switch over to the real thing.
+mirrors a faint transparent copy onto the corresponding spot on the stand-in. This is still **not**
+real body tracking (nothing here reads the player's actual body), but the stand-in isn't frozen
+either: `Assets/Animations/Dancing.fbx` (a Mixamo mocap clip, Humanoid, bone-only/no mesh so it's
+naturally invisible) plays on a loop via a small hidden "Dance Motion Source" child (its own
+Animator + `Assets/Animations/DancingLoop.controller`), and `AvatarDanceSource` reads that Animator's
+live Humanoid bone transforms every `LateUpdate` to reposition the stand-in's `Bone_`/`Joint_`
+children - the same pattern the sibling rayMarchVR project's `RaymarchAvatarSource` uses to drive a
+raymarched skeleton from mocap. It matches each stand-in child's name (`Bone_{from}_{to}` /
+`Joint_{name}`) straight to a `HumanBodyBones` enum value via `Enum.TryParse`, so it needs no
+separate joint list of its own. Swap in any other Humanoid clip by pointing the controller's "Dance"
+state at a different `AnimationClip`, or drop a different Humanoid-rigged FBX in and repoint
+`AvatarDanceSource.sourceAnimator` at its Animator.
+When the Movement SDK is installed, repoint `AvatarBodyTarget`'s joint slots at the real tracked
+bones (or just delete the stand-in and its wiring) to switch over to the real thing.
