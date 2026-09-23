@@ -109,6 +109,38 @@ testable/scriptable on its own.
   `AvatarBodyTarget` in the scene, or that joint's slot unassigned - which is the expected state
   until a real avatar is wired in.
 
+## Raymarched view (Raymarch Quad)
+
+`SkeletonMaker > Add Raymarch Quad` (Editor menu) adds a `Raymarch Quad` to the open scene: a
+1.6 x 2m quad standing 1m in front of `Avatar Stand-In (Preview)`, facing the camera, that shows the
+placed primitives as one smooth raymarched (SDF) surface instead of meshes. It is a *window*, not a
+screen: each eye's rays go through the quad into the world, so the shapes appear exactly where their
+meshes are, with stereo depth, and only the pixels the quad covers are raymarched (the cheap way to
+raymarch in VR - no URP renderer feature involved). Ported from the sibling rayMarchVR project's
+quad path, but primitives-only and rewritten to this project's conventions.
+
+- `RaymarchQuad` (on the quad) gathers every active `Visual` child under each entry in its
+  **Sources** list every frame (after all `LateUpdate`s, so after `AvatarDanceSource` has posed the
+  stand-in) and sends up to 64 shapes to the material via a `MaterialPropertyBlock`. The menu wires
+  two sources: the stand-in (visible) and the main `Skeleton` (wired but **Visible** off) - tick
+  **Visible** per source to toggle, at runtime too, or call `ToggleSource(index)` /
+  `SetSourceVisible(index, bool)`. Look settings (per-source color, blend radius, light, ambient,
+  specular, shadow/AO strength, max steps, background) live on the component.
+- Shape kind: the parent's `RaymarchShape` (stand-in duplicates - `AvatarDuplicateManager` now adds
+  one, since it strips `RaymarchableElement`), else its `RaymarchableElement` (main skeleton), else
+  parsed from the mesh name (covers duplicates made before `RaymarchShape` existed).
+- Size/orientation are *not* sent separately: `Shaders/RaymarchQuad.shader` evaluates each shape in
+  its `Visual`'s own mesh space (`worldToLocalMatrix`), with one SDF per kind matching the native
+  mesh from `RaymarchableElement` / `ProceduralMeshFactory` exactly (built-in capsule/cylinder are
+  radius 0.5 / height 2 along Y; procedural shapes fill a unit box, Y up; torus and link lie in
+  the XY plane). **If you change a mesh in `ProceduralMeshFactory`, update its SDF in the shader and
+  its bounding radius in `RaymarchQuad.NativeBoundRadius`.** Kind indices in the shader follow
+  `PrimitiveKind`'s order.
+- Cost controls for Quest: rays that miss the shapes' overall bounding sphere cost almost nothing,
+  far shapes are skipped per step, and **Max Steps**, **Shadow Strength = 0** and
+  **Occlusion Strength = 0** are the main knobs. The material's **Start At Surface** (on by default)
+  hides anything between the viewer and the quad; **Clip Background** draws only the shapes.
+
 ## Avatar / Meta Body package
 
 The player's own visible body is expected to use Meta's **Movement SDK** (Body Tracking) for a

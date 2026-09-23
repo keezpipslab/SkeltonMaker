@@ -38,6 +38,9 @@ namespace SkeletonMaker
 
             var duplicate = Instantiate(placedTransform.gameObject, jointTransform);
             duplicate.name = placedTransform.name + " (Avatar Duplicate)";
+            // Keep Kind on the copy (StripInteractivity removes the
+            // RaymarchableElement it lives on) so RaymarchQuad can draw it.
+            duplicate.AddComponent<RaymarchShape>().kind = sourceElement.Kind;
             StripInteractivity(duplicate);
             ApplyGhostMaterial(duplicate);
         }
