@@ -156,6 +156,21 @@ separate joint list of its own. Swap in any other Humanoid clip by pointing the 
 state at a different `AnimationClip`, or drop a different Humanoid-rigged FBX in and repoint
 `AvatarDanceSource.sourceAnimator` at its Animator.
 
+The rotation it reads straight off the Animator isn't usable as-is, though: a source rig's bones
+aren't oriented the same way our own bone/joint anchors are (always identity - "no rotation
+relative to setup"). Mixamo's own rest/bind orientation per bone is arbitrary relative to ours, so
+driving an anchor's rotation directly from it baked that mismatch into every placed duplicate's
+position *and* rotation (`Instantiate` rotates a child's local offset by its parent's rotation) -
+correct-looking in the frozen A-pose (which never touches this rotation at all) but visibly wrong
+once dancing. `AvatarDanceSource` fixes this by calibrating: the moment dancing (re)starts, it
+records the inverse of each relevant bone's current rotation, then every frame afterward reports
+that bone's rotation *relative to that calibration instant* rather than its raw value - zero at the
+instant itself (exactly matching the A-pose anchors, identity rotation), and tracking only the
+limb's own subsequent relative motion from there. Verified live with time frozen (`Time.timeScale =
+0`) right at a toggle-to-dancing: the joint's rotation read back as exactly identity and a
+placed duplicate matched its original captured orientation exactly, then drifted only by the
+limb's actual movement once time resumed.
+
 **Dancing vs. a pose**: either controller's trigger (XRI's "Activate" action - unused elsewhere in
 this project, since only grip and the thumbsticks are already taken) toggles the stand-in between
 dancing and standing still in the frozen A-pose. When not dancing, `AvatarDanceSource` copies the

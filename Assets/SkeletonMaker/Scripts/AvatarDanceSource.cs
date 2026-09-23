@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -31,10 +32,28 @@ namespace SkeletonMaker
         [SerializeField] private InputActionReference leftToggleAction;
         [SerializeField] private InputActionReference rightToggleAction;
 
+        // A Humanoid rig's own bones aren't rotated the same way our own
+        // skeleton's bone/joint anchors are (always identity, i.e. "no rotation
+        // relative to setup") - a source rig's rest/bind orientation per bone is
+        // whatever its original rigger/importer set up (e.g. Mixamo's own
+        // convention), which is essentially arbitrary relative to ours. Driving
+        // an anchor's rotation straight from the animator bakes that mismatch
+        // into every placed duplicate's position *and* rotation (Instantiate
+        // rotates a child's local offset by its parent's rotation), which only
+        // shows up once dancing since the frozen-A-pose path never touches this
+        // at all. Fixed by tracking each bone's rotation *relative to wherever it
+        // was the moment dancing last started* - that reference becomes our
+        // "zero," matching the identity-rotation anchors the A-pose path uses,
+        // and the visible motion afterward is exactly the limb's own relative
+        // rotation from that instant, not skewed by the source rig's own setup.
+        private readonly Dictionary<string, Quaternion> calibrationOffsets = new Dictionary<string, Quaternion>();
+        private bool needsCalibration = true;
+
         private void Reset() => standInRoot = transform;
 
         private void OnEnable()
         {
+            needsCalibration = true;
             if (leftToggleAction != null) { leftToggleAction.action.Enable(); leftToggleAction.action.performed += OnToggle; }
             if (rightToggleAction != null) { rightToggleAction.action.Enable(); rightToggleAction.action.performed += OnToggle; }
         }
@@ -45,7 +64,11 @@ namespace SkeletonMaker
             if (rightToggleAction != null) rightToggleAction.action.performed -= OnToggle;
         }
 
-        private void OnToggle(InputAction.CallbackContext ctx) => isDancing = !isDancing;
+        private void OnToggle(InputAction.CallbackContext ctx)
+        {
+            isDancing = !isDancing;
+            if (isDancing) needsCalibration = true; // re-align to the A-pose look at the instant dancing (re)starts
+        }
 
         private void LateUpdate()
         {
@@ -54,11 +77,32 @@ namespace SkeletonMaker
             if (isDancing)
             {
                 if (sourceAnimator == null || !sourceAnimator.isHuman) return;
+                if (needsCalibration) { Calibrate(); needsCalibration = false; }
                 DriveFromAnimator();
             }
             else
             {
                 DriveFromRestPose();
+            }
+        }
+
+        // Captures, once per dancing session, the inverse of each relevant
+        // bone's current world rotation - so CorrectedRotation() below can later
+        // compute "how far this bone has turned since calibration," starting
+        // from identity at the calibration instant itself (matching the A-pose
+        // anchors exactly at that moment) rather than the source rig's own
+        // arbitrary rest orientation.
+        private void Calibrate()
+        {
+            calibrationOffsets.Clear();
+            foreach (Transform child in standInRoot)
+            {
+                foreach (var jointName in NamesFor(child))
+                {
+                    if (calibrationOffsets.ContainsKey(jointName)) continue;
+                    var bone = BoneTransform(jointName);
+                    if (bone != null) calibrationOffsets[jointName] = Quaternion.Inverse(bone.rotation);
+                }
             }
         }
 
@@ -68,7 +112,8 @@ namespace SkeletonMaker
             {
                 if (child.name.StartsWith("Joint_"))
                 {
-                    var bone = BoneTransform(child.name.Substring("Joint_".Length));
+                    string jointName = child.name.Substring("Joint_".Length);
+                    var bone = BoneTransform(jointName);
                     if (bone == null) continue;
 
                     // Rotation matters here even though a bare joint has no line
@@ -78,7 +123,7 @@ namespace SkeletonMaker
                     // only ever captured a *local* offset, so without this the
                     // limb could swing through a whole dance move while a
                     // decoration stayed pointed the same fixed way in world space).
-                    child.SetPositionAndRotation(bone.position, bone.rotation);
+                    child.SetPositionAndRotation(bone.position, CorrectedRotation(jointName, bone));
                 }
                 else if (child.name.StartsWith("Bone_"))
                 {
@@ -92,10 +137,11 @@ namespace SkeletonMaker
                     var to = BoneTransform(parts[1]);
                     if (from == null || to == null) continue;
 
-                    // Same reasoning as above - the "from" bone's rotation, not
-                    // just its position, so anything placed mid-limb tracks that
-                    // limb's current swing instead of staying world-locked.
-                    child.SetPositionAndRotation(from.position, from.rotation);
+                    // Same reasoning as above - the "from" bone's (corrected)
+                    // rotation, not just its position, so anything placed
+                    // mid-limb tracks that limb's current swing instead of
+                    // staying world-locked.
+                    child.SetPositionAndRotation(from.position, CorrectedRotation(parts[0], from));
 
                     var lr = child.GetComponent<LineRenderer>();
                     if (lr != null)
@@ -131,6 +177,22 @@ namespace SkeletonMaker
                 }
             }
         }
+
+        private static IEnumerable<string> NamesFor(Transform child)
+        {
+            if (child.name.StartsWith("Joint_"))
+            {
+                yield return child.name.Substring("Joint_".Length);
+            }
+            else if (child.name.StartsWith("Bone_"))
+            {
+                var parts = child.name.Substring("Bone_".Length).Split('_');
+                if (parts.Length == 2) { yield return parts[0]; yield return parts[1]; }
+            }
+        }
+
+        private Quaternion CorrectedRotation(string jointName, Transform bone) =>
+            calibrationOffsets.TryGetValue(jointName, out var offset) ? bone.rotation * offset : bone.rotation;
 
         private Transform BoneTransform(string jointName) =>
             System.Enum.TryParse(jointName, out HumanBodyBones bone) ? sourceAnimator.GetBoneTransform(bone) : null;
