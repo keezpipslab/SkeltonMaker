@@ -41,6 +41,19 @@ Open scene: `Assets/SkeletonMaker/Scenes/SkeletonBuilder.unity`
 - **Release far away**: the element waits 4s (grace period to re-grab it), then teleports back to
   its home slot on the table (the same instance - re-grabbing during the 4s cancels this).
 
+## Exporting a composition
+
+`SkeletonMaker > Export Composition...` (Editor menu, not an in-VR control) writes every primitive
+currently placed on the main skeleton to a JSON file you choose the location for - each one's
+`kind`, `size`, which `Bone_`/`Joint_` anchor it's parented under, and its local position/rotation
+offset from that anchor (the same offset `AvatarDuplicateManager` already relies on to mirror a
+duplicate correctly, so it's enough to reconstruct the composition later or feed it to another
+tool - `RaymarchableElement` already exposes `Kind` + `Size` as exactly the data a future SDF
+material would need). Only placed elements are included - not anything still on the table,
+currently held, or a stand-in avatar duplicate. `CompositionExporter.BuildCompositionJson()` is the
+actual gathering logic, kept separate from the (blocking, interactive) save dialog so it stays
+testable/scriptable on its own.
+
 ## Script architecture (`Assets/SkeletonMaker/Scripts`)
 
 - `PrimitiveKind` - the 12 shapes listed above.
