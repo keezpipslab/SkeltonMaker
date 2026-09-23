@@ -126,6 +126,8 @@ quad path, but primitives-only and rewritten to this project's conventions.
   **Visible** per source to toggle, at runtime too, or call `ToggleSource(index)` /
   `SetSourceVisible(index, bool)`. Look settings (per-source color, blend radius, light, ambient,
   specular, shadow/AO strength, max steps, background) live on the component.
+  **Show Held** (on by default, gold **Held Color**) also draws the primitive currently held in a hand,
+  which is not under any source root (`Grabbable.Held` tracks what is in a hand).
 - Shape kind: the parent's `RaymarchShape` (stand-in duplicates - `AvatarDuplicateManager` now adds
   one, since it strips `RaymarchableElement`), else its `RaymarchableElement` (main skeleton), else
   parsed from the mesh name (covers duplicates made before `RaymarchShape` existed).

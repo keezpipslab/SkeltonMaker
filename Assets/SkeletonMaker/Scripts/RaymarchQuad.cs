@@ -45,6 +45,10 @@ namespace SkeletonMaker
         [Tooltip("Where shapes are gathered from. Toggle 'visible' at runtime (Inspector, or ToggleSource()/SetSourceVisible() from code) to show/hide a whole skeleton's shapes. Shared cap of MaxShapes across all sources, first come first served.")]
         public List<ShapeSource> sources = new List<ShapeSource>();
 
+        [Tooltip("Also draw the primitive currently held in a hand (it is not under any source root).")]
+        public bool showHeld = true;
+        public Color heldColor = new Color(1f, 0.85f, 0.4f);
+
         [Header("Quality")]
         [Range(8, 128)]
         [Tooltip("Max sphere-tracing steps per ray. Lower = cheaper, but grazing edges and thin gaps may break up.")]
@@ -193,30 +197,19 @@ namespace SkeletonMaker
             foreach (var source in sources)
             {
                 if (source == null || !source.visible || source.root == null) continue;
-
                 source.root.GetComponentsInChildren(false, _filters);
                 foreach (var filter in _filters)
+                    TryAddShape(filter, source.color, ref count, ref min, ref max);
+            }
+
+            if (showHeld)
+            {
+                foreach (var grabbable in Grabbable.Held)
                 {
-                    if (count >= MaxShapes) break;
-                    if (filter.name != "Visual" || !TryGetKind(filter, out PrimitiveKind kind)) continue;
-
-                    Transform visual = filter.transform;
-                    Vector3 scale = visual.lossyScale;
-                    float sx = Mathf.Abs(scale.x), sy = Mathf.Abs(scale.y), sz = Mathf.Abs(scale.z);
-                    float minScale = Mathf.Min(sx, Mathf.Min(sy, sz));
-                    if (minScale < 1e-6f) continue;
-
-                    Vector3 center = visual.position;
-                    float radius = NativeBoundRadius[(int)kind] * Mathf.Max(sx, Mathf.Max(sy, sz));
-
-                    _worldToLocal[count] = visual.worldToLocalMatrix;
-                    _params[count] = new Vector4((int)kind, minScale, 0f, 0f);
-                    _bounds[count] = new Vector4(center.x, center.y, center.z, radius);
-                    _colors[count] = source.color.linear;
-
-                    min = Vector3.Min(min, center - Vector3.one * radius);
-                    max = Vector3.Max(max, center + Vector3.one * radius);
-                    count++;
+                    if (grabbable == null || !grabbable.isActiveAndEnabled) continue;
+                    grabbable.GetComponentsInChildren(false, _filters);
+                    foreach (var filter in _filters)
+                        TryAddShape(filter, heldColor, ref count, ref min, ref max);
                 }
             }
 
@@ -235,6 +228,30 @@ namespace SkeletonMaker
             }
             sceneBounds = new Vector4(sceneCenter.x, sceneCenter.y, sceneCenter.z, sceneRadius + smoothing);
             return count;
+        }
+
+        private void TryAddShape(MeshFilter filter, Color color, ref int count, ref Vector3 min, ref Vector3 max)
+        {
+            if (count >= MaxShapes) return;
+            if (filter.name != "Visual" || !TryGetKind(filter, out PrimitiveKind kind)) return;
+
+            Transform visual = filter.transform;
+            Vector3 scale = visual.lossyScale;
+            float sx = Mathf.Abs(scale.x), sy = Mathf.Abs(scale.y), sz = Mathf.Abs(scale.z);
+            float minScale = Mathf.Min(sx, Mathf.Min(sy, sz));
+            if (minScale < 1e-6f) return;
+
+            Vector3 center = visual.position;
+            float radius = NativeBoundRadius[(int)kind] * Mathf.Max(sx, Mathf.Max(sy, sz));
+
+            _worldToLocal[count] = visual.worldToLocalMatrix;
+            _params[count] = new Vector4((int)kind, minScale, 0f, 0f);
+            _bounds[count] = new Vector4(center.x, center.y, center.z, radius);
+            _colors[count] = color.linear;
+
+            min = Vector3.Min(min, center - Vector3.one * radius);
+            max = Vector3.Max(max, center + Vector3.one * radius);
+            count++;
         }
 
         private static bool TryGetKind(MeshFilter visual, out PrimitiveKind kind)
