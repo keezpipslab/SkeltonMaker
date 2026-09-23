@@ -61,7 +61,9 @@ Open scene: `Assets/SkeletonMaker/Scenes/SkeletonBuilder.unity`
   the shoulders) instead of being posed at runtime. Also owns the hold-proximity color preview
   (`UpdateHeldPreview`/`ClearHeldPreview`, via a `MaterialPropertyBlock` override per bone so it
   works regardless of whether the assigned line material honors per-vertex colors) and exposes each
-  bone's own GameObject as `BoneAnchor(index)` - what placed elements parent under - and its
+  bone's own GameObject as `BoneAnchor(index)` - positioned at that bone's own ("from") joint, so an
+  element parented under it (`SkeletonPlacement.PlaceOnSkeleton`) gets a small, meaningful local
+  offset from the joint it landed on rather than from the whole rig's origin - and its
   `BoneJointName(index)` - the joint-name key shared with `AvatarBodyTarget`.
 - `SkeletonPlacement` - the keep-vs-discard rule on release; on keep, resolves and parents under
   the nearest bone (not the rig root) and triggers `AvatarDuplicateManager`.
@@ -94,11 +96,18 @@ resize controls.
 
 The "duplicate each placed primitive onto the player's own body" feature is already wired up (see
 `AvatarBodyTarget`/`AvatarDuplicateManager` above) and just needs the Movement SDK's actual bone
-transforms plugged in once it's installed. The scene already has an `AvatarBodyTarget (Placeholder)`
-GameObject with all 21 joint slots pre-named to match `SkeletonRig`'s joints, and an
-`AvatarDuplicateManager` with the ghost material assigned. Remaining step: write a small adapter
-that reads the Movement SDK's body-tracking bone transforms (e.g. `OVRSkeleton`'s bones, matched by
-`OVRSkeleton.BoneId`) and assigns them into that `AvatarBodyTarget`'s joint slots by name every
-frame (or once, if the avatar rig is itself driven by an Animator). Everything downstream -
-spawning a transparent, non-interactive duplicate at the matching joint whenever a primitive is
-placed - already works without further changes.
+transforms plugged in once it's installed. Remaining step: write a small adapter that reads the
+Movement SDK's body-tracking bone transforms (e.g. `OVRSkeleton`'s bones, matched by
+`OVRSkeleton.BoneId`) and assigns them into `AvatarBodyTarget`'s joint slots by name every frame (or
+once, if the avatar rig is itself driven by an Animator). Everything downstream - spawning a
+transparent, non-interactive duplicate at the matching joint whenever a primitive is placed -
+already works without further changes.
+
+**Until then**, the scene has a visible `Avatar Stand-In (Preview)` GameObject - a second, static
+copy of the line-skeleton visual standing a couple meters beside the table - so the duplicate
+feature can actually be seen working today. `AvatarBodyTarget (Placeholder)`'s joint slots are
+wired to this stand-in's matching bones (by name), so placing a primitive on the real skeleton
+mirrors a faint transparent copy onto the corresponding spot on the stand-in. This is **not** real
+body tracking - the stand-in never moves - it's purely a placeholder to preview/test the mirroring
+logic. When the Movement SDK is installed, repoint `AvatarBodyTarget`'s joint slots at the real
+tracked bones (or just delete the stand-in and its wiring) to switch over to the real thing.

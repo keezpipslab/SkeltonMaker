@@ -138,11 +138,20 @@ namespace SkeletonMaker
                 var go = new GameObject($"Bone_{bone.from}_{bone.to}");
                 go.transform.SetParent(transform, false);
 
+                // Anchored at the bone's own ("from") joint, not the rig root, so
+                // BoneAnchor(index).position is that joint's real world position -
+                // an element parented under it (SkeletonPlacement.PlaceOnSkeleton)
+                // gets a small, meaningful local offset from the joint it landed
+                // on, rather than a large offset from the whole rig's origin. The
+                // line's own points are shifted by the same amount so it still
+                // renders in exactly the same world place.
+                go.transform.localPosition = a;
+
                 var lr = go.AddComponent<LineRenderer>();
                 lr.useWorldSpace = false;
                 lr.positionCount = 2;
-                lr.SetPosition(0, a);
-                lr.SetPosition(1, b);
+                lr.SetPosition(0, Vector3.zero);
+                lr.SetPosition(1, b - a);
                 lr.startWidth = lineWidth;
                 lr.endWidth = lineWidth;
                 lr.numCapVertices = 4;
