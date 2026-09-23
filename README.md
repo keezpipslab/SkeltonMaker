@@ -128,10 +128,15 @@ real body tracking (nothing here reads the player's actual body), but the stand-
 either: `Assets/Animations/Dancing.fbx` (a Mixamo mocap clip, Humanoid, bone-only/no mesh so it's
 naturally invisible) plays on a loop via a small hidden "Dance Motion Source" child (its own
 Animator + `Assets/Animations/DancingLoop.controller`), and `AvatarDanceSource` reads that Animator's
-live Humanoid bone transforms every `LateUpdate` to reposition the stand-in's `Bone_`/`Joint_`
-children - the same pattern the sibling rayMarchVR project's `RaymarchAvatarSource` uses to drive a
-raymarched skeleton from mocap. It matches each stand-in child's name (`Bone_{from}_{to}` /
-`Joint_{name}`) straight to a `HumanBodyBones` enum value via `Enum.TryParse`, so it needs no
+live Humanoid bone transforms every `LateUpdate` to reposition *and reorient* the stand-in's
+`Bone_`/`Joint_` children - rotation matters here even though a bare joint has no line of its own to
+orient, since anything placed there is a child of it: `AvatarDuplicateManager` only ever captured a
+*local* offset/rotation relative to the joint, so without also updating the joint's own rotation
+every frame, a placed decoration would stay pointed the same fixed way in world space while the limb
+danced around it instead of swinging with it. Same pattern the sibling rayMarchVR project's
+`RaymarchAvatarSource` uses to drive a raymarched skeleton from mocap. It matches each stand-in
+child's name (`Bone_{from}_{to}` / `Joint_{name}`) straight to a `HumanBodyBones` enum value via
+`Enum.TryParse`, so it needs no
 separate joint list of its own. Swap in any other Humanoid clip by pointing the controller's "Dance"
 state at a different `AnimationClip`, or drop a different Humanoid-rigged FBX in and repoint
 `AvatarDanceSource.sourceAnimator` at its Animator.
