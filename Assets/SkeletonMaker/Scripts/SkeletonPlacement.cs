@@ -21,9 +21,14 @@ namespace SkeletonMaker
         public TableSpawnPoint HomeSpawnPoint { get; set; }
 
         private Grabbable grabbable;
+        private RaymarchableElement element;
         private Coroutine discardRoutine;
 
-        private void Awake() => grabbable = GetComponent<Grabbable>();
+        private void Awake()
+        {
+            grabbable = GetComponent<Grabbable>();
+            element = GetComponent<RaymarchableElement>();
+        }
 
         private void OnEnable()
         {
@@ -78,7 +83,8 @@ namespace SkeletonMaker
             if (HomeSpawnPoint != null)
             {
                 transform.SetParent(null, true);
-                transform.SetPositionAndRotation(HomeSpawnPoint.transform.position, HomeSpawnPoint.transform.rotation);
+                Vector3 pos = element != null ? HomeSpawnPoint.RestingPosition(element) : HomeSpawnPoint.transform.position;
+                transform.SetPositionAndRotation(pos, HomeSpawnPoint.transform.rotation);
             }
             else
             {

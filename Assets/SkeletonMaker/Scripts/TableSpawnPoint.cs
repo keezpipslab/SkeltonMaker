@@ -20,8 +20,23 @@ namespace SkeletonMaker
             if (primitivePrefab == null) return;
 
             var instance = Instantiate(primitivePrefab, transform.position, transform.rotation);
+
+            var element = instance.GetComponent<RaymarchableElement>();
+            if (element != null) instance.transform.position = RestingPosition(element);
+
             var placement = instance.GetComponent<SkeletonPlacement>();
             if (placement != null) placement.HomeSpawnPoint = this;
+        }
+
+        /// <summary>Where an element's center should sit so it rests on top of this
+        /// spawn point's surface instead of being half-buried in the table - this
+        /// point's own transform position is the table surface, not the element's
+        /// center.</summary>
+        public Vector3 RestingPosition(RaymarchableElement element)
+        {
+            Vector3 pos = transform.position;
+            pos.y += element.Size.y * 0.5f;
+            return pos;
         }
     }
 }
