@@ -1,11 +1,15 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace SkeletonMaker
 {
     /// <summary>
-    /// Drives the "Avatar Stand-In (Preview)" line skeleton from a Humanoid
-    /// Animator every frame - the same pattern the rayMarchVR project's
-    /// RaymarchAvatarSource uses to feed a raymarched skeleton from mocap.
+    /// Drives the "Avatar Stand-In (Preview)" line skeleton every frame - either
+    /// from a Humanoid Animator (dancing, the same pattern the rayMarchVR
+    /// project's RaymarchAvatarSource uses to feed a raymarched skeleton from
+    /// mocap), or from the main SkeletonRig's own frozen A-pose (its bones never
+    /// move, so it's always the authoritative "standing still" reference).
+    /// Toggle between the two with either controller's trigger (Activate).
     /// Reads each stand-in bone/joint child's name (the same "Bone_{from}_{to}"
     /// / "Joint_{name}" convention SkeletonRig.Build() creates) to look up the
     /// matching HumanBodyBones transform, so it needs no separate joint list of
@@ -20,13 +24,46 @@ namespace SkeletonMaker
         [Tooltip("The stand-in skeleton root whose Bone_/Joint_ children get repositioned. Defaults to this GameObject.")]
         [SerializeField] private Transform standInRoot;
 
+        [Tooltip("Dancing when true; a frozen A-pose (matching the main skeleton) when false. Toggled at runtime by either controller trigger below, or flip it here directly for testing.")]
+        [SerializeField] private bool isDancing = true;
+
+        [Tooltip("Either controller's trigger (XRI's \"Activate\" action) toggles dancing on/off - unused elsewhere in this project.")]
+        [SerializeField] private InputActionReference leftToggleAction;
+        [SerializeField] private InputActionReference rightToggleAction;
+
         private void Reset() => standInRoot = transform;
+
+        private void OnEnable()
+        {
+            if (leftToggleAction != null) { leftToggleAction.action.Enable(); leftToggleAction.action.performed += OnToggle; }
+            if (rightToggleAction != null) { rightToggleAction.action.Enable(); rightToggleAction.action.performed += OnToggle; }
+        }
+
+        private void OnDisable()
+        {
+            if (leftToggleAction != null) leftToggleAction.action.performed -= OnToggle;
+            if (rightToggleAction != null) rightToggleAction.action.performed -= OnToggle;
+        }
+
+        private void OnToggle(InputAction.CallbackContext ctx) => isDancing = !isDancing;
 
         private void LateUpdate()
         {
-            if (sourceAnimator == null || !sourceAnimator.isHuman) return;
             if (standInRoot == null) standInRoot = transform;
 
+            if (isDancing)
+            {
+                if (sourceAnimator == null || !sourceAnimator.isHuman) return;
+                DriveFromAnimator();
+            }
+            else
+            {
+                DriveFromRestPose();
+            }
+        }
+
+        private void DriveFromAnimator()
+        {
             foreach (Transform child in standInRoot)
             {
                 if (child.name.StartsWith("Joint_"))
@@ -66,6 +103,31 @@ namespace SkeletonMaker
                         lr.SetPosition(0, Vector3.zero);
                         lr.SetPosition(1, child.InverseTransformPoint(to.position));
                     }
+                }
+            }
+        }
+
+        // The main SkeletonRig's own Bone_/Joint_ children never move (its A-pose
+        // is frozen), so it's always the correct "standing still" reference to
+        // copy - no separate cached snapshot needed, and it can never go stale.
+        private void DriveFromRestPose()
+        {
+            var mainRig = SkeletonRig.Instance;
+            if (mainRig == null) return;
+
+            foreach (Transform child in standInRoot)
+            {
+                var source = mainRig.transform.Find(child.name);
+                if (source == null) continue;
+
+                child.SetLocalPositionAndRotation(source.localPosition, source.localRotation);
+
+                var lr = child.GetComponent<LineRenderer>();
+                var sourceLr = source.GetComponent<LineRenderer>();
+                if (lr != null && sourceLr != null)
+                {
+                    lr.SetPosition(0, sourceLr.GetPosition(0));
+                    lr.SetPosition(1, sourceLr.GetPosition(1));
                 }
             }
         }

@@ -142,5 +142,15 @@ child's name (`Bone_{from}_{to}` / `Joint_{name}`) straight to a `HumanBodyBones
 separate joint list of its own. Swap in any other Humanoid clip by pointing the controller's "Dance"
 state at a different `AnimationClip`, or drop a different Humanoid-rigged FBX in and repoint
 `AvatarDanceSource.sourceAnimator` at its Animator.
+
+**Dancing vs. a pose**: either controller's trigger (XRI's "Activate" action - unused elsewhere in
+this project, since only grip and the thumbsticks are already taken) toggles the stand-in between
+dancing and standing still in the frozen A-pose. When not dancing, `AvatarDanceSource` copies the
+main `SkeletonRig`'s own `Bone_`/`Joint_` local transforms straight onto the stand-in's matching
+children every frame instead of reading the dance Animator - the main rig's pose never changes, so
+it's always the correct, authoritative "standing still" reference rather than a separately cached
+snapshot that could go stale. `AvatarDanceSource.isDancing` is also just a plain serialized bool, so
+it can be flipped directly in the Inspector at runtime for quick testing without touching a
+controller at all.
 When the Movement SDK is installed, repoint `AvatarBodyTarget`'s joint slots at the real tracked
 bones (or just delete the stand-in and its wiring) to switch over to the real thing.
