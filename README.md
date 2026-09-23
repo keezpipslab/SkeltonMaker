@@ -28,8 +28,10 @@ Open scene: `Assets/SkeletonMaker/Scenes/SkeletonBuilder.unity`
   within 35cm, turning green once within the 15cm placement radius - previewing which bone it'll
   land on before you let go. Near a hinge joint (shoulder, elbow, wrist, hip, knee, ankle), both
   bones meeting there brighten together instead of just one, signaling you're aiming at the joint
-  itself rather than partway along a limb.
-- **Release near/on a hinge joint** (within 15cm of a shoulder/elbow/wrist/hip/knee/ankle): the
+  itself rather than partway along a limb - joints use a tighter 6cm radius than bones do (most
+  limb bones here are only 30-40cm long, so a joint had to stay a small, deliberate target rather
+  than swallowing most of the bone's own length).
+- **Release near/on a hinge joint** (within 6cm of a shoulder/elbow/wrist/hip/knee/ankle): the
   element stays, parented under that joint specifically (e.g. `Joint_LeftLowerArm` for the elbow) -
   takes priority over the bone check below even if a bone segment is technically a hair closer,
   since aiming at a joint is the more deliberate target.

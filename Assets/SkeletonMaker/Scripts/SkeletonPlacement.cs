@@ -16,6 +16,14 @@ namespace SkeletonMaker
     public class SkeletonPlacement : MonoBehaviour
     {
         [SerializeField] private float placeDistance = 0.15f;
+
+        // Deliberately tighter than placeDistance: most limb bones here are only
+        // 0.3-0.4m long, so reusing placeDistance for joints too was swallowing
+        // most (up to all) of a bone's own length in joint-priority territory,
+        // making bone placement nearly impossible almost everywhere. A joint is
+        // meant to be a small, deliberate target, not a wide catch-all.
+        [SerializeField] private float jointPlaceDistance = 0.06f;
+
         [SerializeField] private float discardDelay = 4f;
 
         // Kept for the element's whole lifetime (not cleared on placement) so
@@ -48,7 +56,7 @@ namespace SkeletonMaker
         private void Update()
         {
             if (!grabbable.IsHeld) return;
-            SkeletonRig.Instance?.UpdateHeldPreview(transform.position, placeDistance);
+            SkeletonRig.Instance?.UpdateHeldPreview(transform.position, placeDistance, jointPlaceDistance);
         }
 
         private void OnGrabbed()
@@ -66,7 +74,7 @@ namespace SkeletonMaker
             if (rig != null)
             {
                 int jointIndex = rig.NearestHingeJointIndex(transform.position, out float jointDistance);
-                if (jointIndex >= 0 && jointDistance <= placeDistance)
+                if (jointIndex >= 0 && jointDistance <= jointPlaceDistance)
                 {
                     PlaceOnJoint(rig, jointIndex);
                     return;

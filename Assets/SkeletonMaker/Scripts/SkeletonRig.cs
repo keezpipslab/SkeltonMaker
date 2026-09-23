@@ -281,30 +281,44 @@ namespace SkeletonMaker
             index >= 0 && index < HingeJointNames.Length ? HingeJointNames[index] : null;
 
         /// <summary>Called once per frame while a primitive is held, to preview
-        /// where it would land: the nearest hinge joint (if within range) takes
-        /// priority and brightens every bone touching it together (both the upper
-        /// and lower segment for an elbow/knee/etc., matching the priority
-        /// SkeletonPlacement.OnReleased uses); otherwise falls back to brightening
-        /// just the nearest bone segment. Either way, flips to placeableColor once
-        /// within the actual placement radius passed in from SkeletonPlacement.</summary>
-        public void UpdateHeldPreview(Vector3 worldPoint, float placeDistance)
+        /// where it would land. Mirrors SkeletonPlacement.OnReleased's own
+        /// priority exactly, so the preview never shows green somewhere release
+        /// wouldn't actually place: a hinge joint within jointPlaceDistance always
+        /// wins (brightening every bone touching it together - both the upper and
+        /// lower segment for an elbow/knee/etc.) even if a bone segment is
+        /// technically closer; otherwise a bone segment within placeDistance.
+        /// If neither is close enough to place on yet, whichever is nearer gets a
+        /// dimmer "approaching" highlight as long as it's within
+        /// nearHighlightRadius.</summary>
+        public void UpdateHeldPreview(Vector3 worldPoint, float placeDistance, float jointPlaceDistance)
         {
             int jointIndex = NearestHingeJointIndex(worldPoint, out float jointDistance);
-            if (jointIndex >= 0 && jointDistance <= nearHighlightRadius)
+            if (jointIndex >= 0 && jointDistance <= jointPlaceDistance)
             {
-                SetHighlightedBones(hingeJointIncidentBones[jointIndex],
-                    jointDistance <= placeDistance ? placeableColor : nearColor);
+                SetHighlightedBones(hingeJointIncidentBones[jointIndex], placeableColor);
                 return;
             }
 
             int boneIndex = NearestBoneIndex(worldPoint, out float boneDistance);
-            if (boneIndex < 0 || boneDistance > nearHighlightRadius)
+            if (boneIndex >= 0 && boneDistance <= placeDistance)
             {
-                ClearHeldPreview();
+                SetHighlightedBones(new[] { boneIndex }, placeableColor);
                 return;
             }
 
-            SetHighlightedBones(new[] { boneIndex }, boneDistance <= placeDistance ? placeableColor : nearColor);
+            bool jointNearer = jointIndex >= 0 && (boneIndex < 0 || jointDistance <= boneDistance);
+            if (jointNearer && jointDistance <= nearHighlightRadius)
+            {
+                SetHighlightedBones(hingeJointIncidentBones[jointIndex], nearColor);
+            }
+            else if (!jointNearer && boneIndex >= 0 && boneDistance <= nearHighlightRadius)
+            {
+                SetHighlightedBones(new[] { boneIndex }, nearColor);
+            }
+            else
+            {
+                ClearHeldPreview();
+            }
         }
 
         /// <summary>Resets whichever bone(s) are currently highlighted, if any. Safe
