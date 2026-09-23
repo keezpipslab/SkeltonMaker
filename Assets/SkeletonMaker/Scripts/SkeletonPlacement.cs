@@ -4,10 +4,12 @@ using UnityEngine;
 namespace SkeletonMaker
 {
     /// <summary>
-    /// On release: close enough to the skeleton -> parents to it and stays,
-    /// spawning a replacement on the table. Too far -> after a grace period
-    /// (re-grabbing during it cancels this), it reappears back at its table
-    /// slot instead of being lost.
+    /// While held, previews where the element would land (SkeletonRig highlights
+    /// the nearest bone). On release: close enough -> parents under that bone
+    /// (estimated as the nearest bone segment) and stays, spawning a replacement
+    /// on the table and triggering the avatar-duplicate hook. Too far -> after a
+    /// grace period (re-grabbing during it cancels this), it reappears back at
+    /// its table slot instead of being lost.
     /// </summary>
     [RequireComponent(typeof(Grabbable))]
     public class SkeletonPlacement : MonoBehaviour
@@ -42,6 +44,12 @@ namespace SkeletonMaker
             grabbable.Released -= OnReleased;
         }
 
+        private void Update()
+        {
+            if (!grabbable.IsHeld) return;
+            SkeletonRig.Instance?.UpdateHeldPreview(transform.position, placeDistance);
+        }
+
         private void OnGrabbed()
         {
             if (discardRoutine == null) return;
@@ -52,11 +60,15 @@ namespace SkeletonMaker
         private void OnReleased()
         {
             var rig = SkeletonRig.Instance;
-            float distance = rig != null ? rig.DistanceToNearestBone(transform.position) : float.MaxValue;
+            rig?.ClearHeldPreview();
 
-            if (distance <= placeDistance)
+            int boneIndex = -1;
+            float distance = float.MaxValue;
+            if (rig != null) boneIndex = rig.NearestBoneIndex(transform.position, out distance);
+
+            if (rig != null && distance <= placeDistance)
             {
-                PlaceOnSkeleton(rig);
+                PlaceOnSkeleton(rig, boneIndex);
             }
             else
             {
@@ -64,11 +76,15 @@ namespace SkeletonMaker
             }
         }
 
-        private void PlaceOnSkeleton(SkeletonRig rig)
+        private void PlaceOnSkeleton(SkeletonRig rig, int boneIndex)
         {
-            transform.SetParent(rig.transform, true);
+            transform.SetParent(rig.BoneAnchor(boneIndex), true);
 
             if (HomeSpawnPoint != null) HomeSpawnPoint.SpawnReplacement();
+
+            // No-ops until a real avatar (Meta Movement SDK) is wired into an
+            // AvatarBodyTarget's joint slots - see AvatarDuplicateManager.
+            AvatarDuplicateManager.Instance?.PlaceDuplicate(rig.BoneJointName(boneIndex), element, transform);
         }
 
         private IEnumerator DiscardAfterDelay()

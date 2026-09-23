@@ -21,6 +21,13 @@ namespace SkeletonMaker
         [SerializeField] private Material lineMaterial;
         [SerializeField] private Color lineColor = Color.white;
 
+        // Hold-proximity feedback: while a primitive is held, the nearest
+        // bone brightens as it gets within nearHighlightRadius, then flips
+        // to placeableColor once inside the actual placement radius.
+        [SerializeField] private float nearHighlightRadius = 0.35f;
+        [SerializeField] private Color nearColor = Color.yellow;
+        [SerializeField] private Color placeableColor = Color.green;
+
         private static readonly Dictionary<string, Vector3> Joints = new Dictionary<string, Vector3>
         {
             { "Hips", new Vector3(0f, 0.95f, 0f) },
@@ -65,6 +72,15 @@ namespace SkeletonMaker
         };
 
         private readonly List<(Vector3 a, Vector3 b)> boneSegmentsLocal = new List<(Vector3, Vector3)>();
+        private readonly List<LineRenderer> boneLineRenderers = new List<LineRenderer>();
+
+        private int highlightedBoneIndex = -1;
+        private MaterialPropertyBlock highlightMpb;
+
+        /// <summary>The joint names used both here and by AvatarBodyTarget, so a
+        /// future avatar's joint slots can be kept in sync with this rig's bones
+        /// without duplicating the name list.</summary>
+        public static IReadOnlyCollection<string> JointNames => Joints.Keys;
 
         private void Awake()
         {
@@ -110,6 +126,8 @@ namespace SkeletonMaker
             }
 
             boneSegmentsLocal.Clear();
+            boneLineRenderers.Clear();
+            highlightedBoneIndex = -1; // the old bone GameObjects it referred to are gone
 
             foreach (var bone in Bones)
             {
@@ -133,21 +151,100 @@ namespace SkeletonMaker
                 lr.endColor = lineColor;
                 lr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 lr.receiveShadows = false;
+
+                boneLineRenderers.Add(lr);
             }
         }
 
         /// <summary>Shortest distance from a world-space point to any bone segment.</summary>
         public float DistanceToNearestBone(Vector3 worldPoint)
         {
+            NearestBoneIndex(worldPoint, out float distance);
+            return distance;
+        }
+
+        /// <summary>Index (into the internal bone list) of the bone segment nearest
+        /// worldPoint, and its distance - the same "nearest segment" estimate used
+        /// both for the placement radius check and for BoneAnchor/BoneJointName.</summary>
+        public int NearestBoneIndex(Vector3 worldPoint, out float distance)
+        {
+            int bestIndex = -1;
             float best = float.MaxValue;
-            foreach (var segment in boneSegmentsLocal)
+            for (int i = 0; i < boneSegmentsLocal.Count; i++)
             {
-                Vector3 a = transform.TransformPoint(segment.a);
-                Vector3 b = transform.TransformPoint(segment.b);
+                Vector3 a = transform.TransformPoint(boneSegmentsLocal[i].a);
+                Vector3 b = transform.TransformPoint(boneSegmentsLocal[i].b);
                 float d = DistancePointToSegment(worldPoint, a, b);
-                if (d < best) best = d;
+                if (d < best)
+                {
+                    best = d;
+                    bestIndex = i;
+                }
             }
-            return best;
+            distance = best;
+            return bestIndex;
+        }
+
+        /// <summary>The transform placed elements nearest this bone should parent
+        /// under - the bone's own GameObject, so the hierarchy reflects which body
+        /// part each element landed on.</summary>
+        public Transform BoneAnchor(int index) =>
+            index >= 0 && index < boneLineRenderers.Count ? boneLineRenderers[index].transform : transform;
+
+        /// <summary>The joint name (matching AvatarBodyTarget's slots) a bone's
+        /// proximal end is named after - e.g. the "LeftShoulder"-to-"LeftUpperArm"
+        /// segment is named for its proximal joint, "LeftShoulder".</summary>
+        public string BoneJointName(int index) =>
+            index >= 0 && index < Bones.Length ? Bones[index].from : null;
+
+        /// <summary>Called once per frame while a primitive is held, to preview
+        /// where it would land: brightens the nearest bone as it gets within
+        /// nearHighlightRadius, flipping to placeableColor once within the actual
+        /// placement radius passed in from SkeletonPlacement.</summary>
+        public void UpdateHeldPreview(Vector3 worldPoint, float placeDistance)
+        {
+            int nearest = NearestBoneIndex(worldPoint, out float distance);
+
+            if (nearest < 0 || distance > nearHighlightRadius)
+            {
+                ClearHeldPreview();
+                return;
+            }
+
+            if (nearest != highlightedBoneIndex)
+            {
+                ResetBoneColor(highlightedBoneIndex);
+                highlightedBoneIndex = nearest;
+            }
+
+            SetBoneColor(nearest, distance <= placeDistance ? placeableColor : nearColor);
+        }
+
+        /// <summary>Resets whichever bone is currently highlighted, if any. Safe to
+        /// call any time, including when nothing is highlighted.</summary>
+        public void ClearHeldPreview()
+        {
+            ResetBoneColor(highlightedBoneIndex);
+            highlightedBoneIndex = -1;
+        }
+
+        private void SetBoneColor(int index, Color color)
+        {
+            if (index < 0 || index >= boneLineRenderers.Count) return;
+            if (highlightMpb == null) highlightMpb = new MaterialPropertyBlock();
+
+            // MaterialPropertyBlock, not LineRenderer.startColor/endColor: this
+            // reliably overrides just this instance's color regardless of whether
+            // the assigned material's shader honors per-vertex line colors (not
+            // guaranteed for a plain URP Unlit material like SkeletonLineMat).
+            highlightMpb.SetColor("_BaseColor", color);
+            boneLineRenderers[index].SetPropertyBlock(highlightMpb);
+        }
+
+        private void ResetBoneColor(int index)
+        {
+            if (index < 0 || index >= boneLineRenderers.Count) return;
+            boneLineRenderers[index].SetPropertyBlock(null);
         }
 
         private static float DistancePointToSegment(Vector3 p, Vector3 a, Vector3 b)

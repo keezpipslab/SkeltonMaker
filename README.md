@@ -24,8 +24,12 @@ Open scene: `Assets/SkeletonMaker/Scenes/SkeletonBuilder.unity`
   - Left stick **X**: height (local Y)
   - Right stick **X**: width (local X)
   - Right stick **Y**: depth (local Z)
-- **Release near/on the skeleton** (within 15cm of a bone line): the element stays, parented to
-  the skeleton, and a fresh copy appears back at its table slot.
+- **Hold near the skeleton**: the nearest bone line brightens (yellow) as the held element gets
+  within 35cm, turning green once within the 15cm placement radius - previewing which bone it'll
+  land on before you let go.
+- **Release near/on the skeleton** (within 15cm of a bone line): the element stays, parented under
+  that specific bone (e.g. `Bone_LeftUpperArm_LeftLowerArm`) rather than the skeleton root, and a
+  fresh copy appears back at its table slot.
 - **Release far away**: the element waits 4s (grace period to re-grab it), then teleports back to
   its home slot on the table (the same instance - re-grabbing during the 4s cancels this).
 
@@ -49,13 +53,29 @@ Open scene: `Assets/SkeletonMaker/Scenes/SkeletonBuilder.unity`
   nearest `Grabbable`.
 - `HeldElementScaler` - the thumbstick-to-size mapping described above.
 - `SkeletonRig` - the line skeleton itself (`LineRenderer` per bone) and
-  `DistanceToNearestBone(worldPoint)` used for the placement check. 21 joints matching Unity's
-  HumanBodyBones chain (hips/spine/chest/neck/head, shoulder-upperarm-lowerarm-hand per arm,
-  upperleg-lowerleg-foot-toes per leg) - the same joint set/connectivity the rayMarchVR project's
-  `RaymarchAvatarSource` drives live off a Humanoid Animator, but frozen here into a fixed A-pose
-  (arms angled ~35 degrees down and out from the shoulders) instead of being posed at runtime.
-- `SkeletonPlacement` - the keep-vs-discard rule on release.
+  `NearestBoneIndex(worldPoint)` used both for the placement check and to estimate which bone/joint
+  a primitive is being placed on. 21 joints matching Unity's HumanBodyBones chain (hips/spine/
+  chest/neck/head, shoulder-upperarm-lowerarm-hand per arm, upperleg-lowerleg-foot-toes per leg) -
+  the same joint set/connectivity the rayMarchVR project's `RaymarchAvatarSource` drives live off a
+  Humanoid Animator, but frozen here into a fixed A-pose (arms angled ~35 degrees down and out from
+  the shoulders) instead of being posed at runtime. Also owns the hold-proximity color preview
+  (`UpdateHeldPreview`/`ClearHeldPreview`, via a `MaterialPropertyBlock` override per bone so it
+  works regardless of whether the assigned line material honors per-vertex colors) and exposes each
+  bone's own GameObject as `BoneAnchor(index)` - what placed elements parent under - and its
+  `BoneJointName(index)` - the joint-name key shared with `AvatarBodyTarget`.
+- `SkeletonPlacement` - the keep-vs-discard rule on release; on keep, resolves and parents under
+  the nearest bone (not the rig root) and triggers `AvatarDuplicateManager`.
 - `TableSpawnPoint` - one table slot; spawns a replacement when notified.
+- `AvatarBodyTarget` - placeholder joint-name -> Transform map for the player's own avatar body,
+  meant to eventually sit on whatever Meta's Movement SDK (Body Tracking) drives. Its joint slot
+  names are auto-populated from `SkeletonRig.JointNames` so they can never drift out of sync. Every
+  slot's transform is null until the Movement SDK is installed and its bone transforms are mapped
+  in (e.g. by an adapter reading `OVRSkeleton.BoneId` and assigning by name) - until then this is
+  inert plumbing.
+- `AvatarDuplicateManager` - on each placement, mirrors a transparent, non-interactive duplicate of
+  the placed element onto the matching `AvatarBodyTarget` joint (see below). No-ops safely - no
+  `AvatarBodyTarget` in the scene, or that joint's slot unassigned - which is the expected state
+  until a real avatar is wired in.
 
 ## Avatar / Meta Body package
 
@@ -71,3 +91,14 @@ sample's hand-tracking, poke/near-far interactors, and locomotion (teleport/move
 disabled in the scene since this app doesn't need them - the player is expected to stand still at
 the table - and a live thumbstick otherwise doubles as "walk around" input, which would fight the
 resize controls.
+
+The "duplicate each placed primitive onto the player's own body" feature is already wired up (see
+`AvatarBodyTarget`/`AvatarDuplicateManager` above) and just needs the Movement SDK's actual bone
+transforms plugged in once it's installed. The scene already has an `AvatarBodyTarget (Placeholder)`
+GameObject with all 21 joint slots pre-named to match `SkeletonRig`'s joints, and an
+`AvatarDuplicateManager` with the ghost material assigned. Remaining step: write a small adapter
+that reads the Movement SDK's body-tracking bone transforms (e.g. `OVRSkeleton`'s bones, matched by
+`OVRSkeleton.BoneId`) and assigns them into that `AvatarBodyTarget`'s joint slots by name every
+frame (or once, if the avatar rig is itself driven by an Animator). Everything downstream -
+spawning a transparent, non-interactive duplicate at the matching joint whenever a primitive is
+placed - already works without further changes.
