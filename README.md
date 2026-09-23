@@ -26,9 +26,8 @@ Open scene: `Assets/SkeletonMaker/Scenes/SkeletonBuilder.unity`
   - Right stick **Y**: depth (local Z)
 - **Release near/on the skeleton** (within 15cm of a bone line): the element stays, parented to
   the skeleton, and a fresh copy appears back at its table slot.
-- **Release far away**: the element waits 4s (grace period to re-grab it) then is destroyed. It
-  does *not* respawn on the table - dropping one away is a one-way loss, so table primitives
-  aren't infinite.
+- **Release far away**: the element waits 4s (grace period to re-grab it), then teleports back to
+  its home slot on the table (the same instance - re-grabbing during the 4s cancels this).
 
 ## Script architecture (`Assets/SkeletonMaker/Scripts`)
 

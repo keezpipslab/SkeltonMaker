@@ -29,18 +29,20 @@ namespace SkeletonMaker
             { "Neck", new Vector3(0f, 1.45f, 0f) },
             { "Head", new Vector3(0f, 1.60f, 0f) },
 
-            // Arms angled ~35 degrees down and out from the shoulder (A-pose):
-            // each bone below LeftUpperArm/RightUpperArm steps outward by
-            // sin(35 deg)*boneLength and down by cos(35 deg)*boneLength.
+            // A-pose: the upper arm angles ~35 degrees down and out from the
+            // shoulder; the forearm then bends back toward vertical (~15
+            // degrees) instead of continuing in a straight line, so there's
+            // a visible kink at the elbow marking where upper arm ends and
+            // forearm begins.
             { "LeftShoulder", new Vector3(0.09f, 1.42f, 0f) },
             { "LeftUpperArm", new Vector3(0.17f, 1.38f, 0f) },
             { "LeftLowerArm", new Vector3(0.377f, 1.085f, 0f) },
-            { "LeftHand", new Vector3(0.583f, 0.790f, 0f) },
+            { "LeftHand", new Vector3(0.470f, 0.737f, 0f) },
 
             { "RightShoulder", new Vector3(-0.09f, 1.42f, 0f) },
             { "RightUpperArm", new Vector3(-0.17f, 1.38f, 0f) },
             { "RightLowerArm", new Vector3(-0.377f, 1.085f, 0f) },
-            { "RightHand", new Vector3(-0.583f, 0.790f, 0f) },
+            { "RightHand", new Vector3(-0.470f, 0.737f, 0f) },
 
             { "LeftUpperLeg", new Vector3(0.10f, 0.90f, 0f) },
             { "LeftLowerLeg", new Vector3(0.10f, 0.48f, 0f) },
