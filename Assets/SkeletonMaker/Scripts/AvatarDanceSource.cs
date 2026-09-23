@@ -4,18 +4,6 @@ using UnityEngine.InputSystem;
 
 namespace SkeletonMaker
 {
-    /// <summary>
-    /// Drives the "Avatar Stand-In (Preview)" line skeleton every frame - either
-    /// from a Humanoid Animator (dancing, the same pattern the rayMarchVR
-    /// project's RaymarchAvatarSource uses to feed a raymarched skeleton from
-    /// mocap), or from the main SkeletonRig's own frozen A-pose (its bones never
-    /// move, so it's always the authoritative "standing still" reference).
-    /// Toggle between the two with either controller's trigger (Activate).
-    /// Reads each stand-in bone/joint child's name (the same "Bone_{from}_{to}"
-    /// / "Joint_{name}" convention SkeletonRig.Build() creates) to look up the
-    /// matching HumanBodyBones transform, so it needs no separate joint list of
-    /// its own - it just mirrors whatever SkeletonRig already named things.
-    /// </summary>
     [ExecuteAlways]
     public class AvatarDanceSource : MonoBehaviour
     {
@@ -32,21 +20,8 @@ namespace SkeletonMaker
         [SerializeField] private InputActionReference leftToggleAction;
         [SerializeField] private InputActionReference rightToggleAction;
 
-        // A Humanoid rig's own bones aren't rotated the same way our own
-        // skeleton's bone/joint anchors are (always identity, i.e. "no rotation
-        // relative to setup") - a source rig's rest/bind orientation per bone is
-        // whatever its original rigger/importer set up (e.g. Mixamo's own
-        // convention), which is essentially arbitrary relative to ours. Driving
-        // an anchor's rotation straight from the animator bakes that mismatch
-        // into every placed duplicate's position *and* rotation (Instantiate
-        // rotates a child's local offset by its parent's rotation), which only
-        // shows up once dancing since the frozen-A-pose path never touches this
-        // at all. Fixed by tracking each bone's rotation *relative to wherever it
-        // was the moment dancing last started* - that reference becomes our
-        // "zero," matching the identity-rotation anchors the A-pose path uses,
-        // and the visible motion afterward is exactly the limb's own relative
-        // rotation from that instant, not skewed by the source rig's own setup.
-        private readonly Dictionary<string, Quaternion> calibrationOffsets = new Dictionary<string, Quaternion>();
+        // anchorRotation = humanoidBone.rotation * restInverse[joint]; identity-in-A-pose by construction.
+        private readonly Dictionary<string, Quaternion> restInverse = new Dictionary<string, Quaternion>();
         private bool needsCalibration = true;
 
         private void Reset() => standInRoot = transform;
@@ -64,20 +39,15 @@ namespace SkeletonMaker
             if (rightToggleAction != null) rightToggleAction.action.performed -= OnToggle;
         }
 
-        private void OnToggle(InputAction.CallbackContext ctx)
-        {
-            isDancing = !isDancing;
-            if (isDancing) needsCalibration = true; // re-align to the A-pose look at the instant dancing (re)starts
-        }
+        private void OnToggle(InputAction.CallbackContext ctx) => isDancing = !isDancing;
 
         private void LateUpdate()
         {
             if (standInRoot == null) standInRoot = transform;
-
             if (isDancing)
             {
                 if (sourceAnimator == null || !sourceAnimator.isHuman) return;
-                if (needsCalibration) { Calibrate(); needsCalibration = false; }
+                if (needsCalibration && Calibrate()) needsCalibration = false;
                 DriveFromAnimator();
             }
             else
@@ -86,24 +56,80 @@ namespace SkeletonMaker
             }
         }
 
-        // Captures, once per dancing session, the inverse of each relevant
-        // bone's current world rotation - so CorrectedRotation() below can later
-        // compute "how far this bone has turned since calibration," starting
-        // from identity at the calibration instant itself (matching the A-pose
-        // anchors exactly at that moment) rather than the source rig's own
-        // arbitrary rest orientation.
-        private void Calibrate()
+        // The main skeleton's "Left" joints sit on +X, which is the humanoid's *Right* side when both
+        // face +Z, so every name is looked up on the opposite side to keep primitives on the same limb.
+        private static string HumanoidName(string jointName)
         {
-            calibrationOffsets.Clear();
+            if (jointName.StartsWith("Left")) return "Right" + jointName.Substring(4);
+            if (jointName.StartsWith("Right")) return "Left" + jointName.Substring(5);
+            return jointName;
+        }
+
+        // Rest orientation = the humanoid's zero-muscle T-pose, converted to the A-pose the main
+        // skeleton uses (identity anchors) by swinging each limb onto its A-pose direction.
+        private bool Calibrate()
+        {
+            var mainRig = SkeletonRig.Instance != null ? SkeletonRig.Instance : FindFirstObjectByType<SkeletonRig>();
+            if (mainRig == null || sourceAnimator.avatar == null) return false;
+
+            var segments = new List<(string from, string to, Vector3 dir)>();
+            foreach (Transform child in mainRig.transform)
+            {
+                if (!child.name.StartsWith("Bone_")) continue;
+                var parts = child.name.Substring("Bone_".Length).Split('_');
+                var lr = child.GetComponent<LineRenderer>();
+                if (parts.Length != 2 || lr == null) continue;
+                var localDir = child.localRotation * (lr.GetPosition(1) - lr.GetPosition(0));
+                segments.Add((parts[0], parts[1], standInRoot.TransformDirection(localDir).normalized));
+            }
+
+            var restPos = new Dictionary<string, Vector3>();
+            var restRot = new Dictionary<string, Quaternion>();
+            var handler = new HumanPoseHandler(sourceAnimator.avatar, sourceAnimator.transform);
+            var current = new HumanPose();
+            handler.GetHumanPose(ref current);
+            var rest = new HumanPose
+            {
+                bodyPosition = current.bodyPosition,
+                bodyRotation = Quaternion.identity,
+                muscles = new float[current.muscles.Length],
+            };
+            handler.SetHumanPose(ref rest);
+            foreach (var name in System.Enum.GetNames(typeof(HumanBodyBones)))
+            {
+                var t = BoneByHumanoidName(name);
+                if (t == null) continue;
+                restPos[name] = t.position;
+                restRot[name] = t.rotation;
+            }
+            handler.SetHumanPose(ref current);
+            handler.Dispose();
+
+            restInverse.Clear();
             foreach (Transform child in standInRoot)
             {
                 foreach (var jointName in NamesFor(child))
                 {
-                    if (calibrationOffsets.ContainsKey(jointName)) continue;
-                    var bone = BoneTransform(jointName);
-                    if (bone != null) calibrationOffsets[jointName] = Quaternion.Inverse(bone.rotation);
+                    if (restInverse.ContainsKey(jointName)) continue;
+                    string humanName = HumanoidName(jointName);
+                    if (!restRot.TryGetValue(humanName, out var rotAtRest)) continue;
+
+                    string a = null, b = null;
+                    Vector3 aDir = default;
+                    foreach (var s in segments)
+                        if (s.from == jointName) { a = s.from; b = s.to; aDir = s.dir; break; }
+                    if (a == null)
+                        foreach (var s in segments)
+                            if (s.to == jointName) { a = s.from; b = s.to; aDir = s.dir; break; }
+                    if (a == null) continue;
+                    if (!restPos.TryGetValue(HumanoidName(a), out var pa) || !restPos.TryGetValue(HumanoidName(b), out var pb)) continue;
+
+                    var tDir = (pb - pa).normalized;
+                    var swing = Quaternion.FromToRotation(tDir, aDir);
+                    restInverse[jointName] = Quaternion.Inverse(swing * rotAtRest) * standInRoot.rotation;
                 }
             }
+            return true;
         }
 
         private void DriveFromAnimator()
@@ -115,34 +141,16 @@ namespace SkeletonMaker
                     string jointName = child.name.Substring("Joint_".Length);
                     var bone = BoneTransform(jointName);
                     if (bone == null) continue;
-
-                    // Rotation matters here even though a bare joint has no line
-                    // of its own to orient: anything placed on this joint is a
-                    // child of it, so its world rotation rides along with
-                    // whatever rotation we give the joint (AvatarDuplicateManager
-                    // only ever captured a *local* offset, so without this the
-                    // limb could swing through a whole dance move while a
-                    // decoration stayed pointed the same fixed way in world space).
-                    child.SetPositionAndRotation(bone.position, CorrectedRotation(jointName, bone));
+                    child.SetPositionAndRotation(bone.position, AnchorRotation(jointName, bone));
                 }
                 else if (child.name.StartsWith("Bone_"))
                 {
-                    // "Bone_{from}_{to}" - joint names themselves never contain
-                    // underscores, so splitting the remainder on '_' always
-                    // yields exactly the two names.
                     var parts = child.name.Substring("Bone_".Length).Split('_');
                     if (parts.Length != 2) continue;
-
                     var from = BoneTransform(parts[0]);
                     var to = BoneTransform(parts[1]);
                     if (from == null || to == null) continue;
-
-                    // Same reasoning as above - the "from" bone's (corrected)
-                    // rotation, not just its position, so anything placed
-                    // mid-limb tracks that limb's current swing instead of
-                    // staying world-locked.
-                    child.SetPositionAndRotation(from.position, CorrectedRotation(parts[0], from));
-
+                    child.SetPositionAndRotation(from.position, AnchorRotation(parts[0], from));
                     var lr = child.GetComponent<LineRenderer>();
                     if (lr != null)
                     {
@@ -153,21 +161,15 @@ namespace SkeletonMaker
             }
         }
 
-        // The main SkeletonRig's own Bone_/Joint_ children never move (its A-pose
-        // is frozen), so it's always the correct "standing still" reference to
-        // copy - no separate cached snapshot needed, and it can never go stale.
         private void DriveFromRestPose()
         {
             var mainRig = SkeletonRig.Instance;
             if (mainRig == null) return;
-
             foreach (Transform child in standInRoot)
             {
                 var source = mainRig.transform.Find(child.name);
                 if (source == null) continue;
-
                 child.SetLocalPositionAndRotation(source.localPosition, source.localRotation);
-
                 var lr = child.GetComponent<LineRenderer>();
                 var sourceLr = source.GetComponent<LineRenderer>();
                 if (lr != null && sourceLr != null)
@@ -191,10 +193,14 @@ namespace SkeletonMaker
             }
         }
 
-        private Quaternion CorrectedRotation(string jointName, Transform bone) =>
-            calibrationOffsets.TryGetValue(jointName, out var offset) ? bone.rotation * offset : bone.rotation;
+        private Quaternion AnchorRotation(string jointName, Transform bone) =>
+            restInverse.TryGetValue(jointName, out var inv) ? bone.rotation * inv : bone.rotation;
 
-        private Transform BoneTransform(string jointName) =>
-            System.Enum.TryParse(jointName, out HumanBodyBones bone) ? sourceAnimator.GetBoneTransform(bone) : null;
+        private Transform BoneTransform(string jointName) => BoneByHumanoidName(HumanoidName(jointName));
+
+        private Transform BoneByHumanoidName(string humanoidName) =>
+            System.Enum.TryParse(humanoidName, out HumanBodyBones bone) && bone != HumanBodyBones.LastBone
+                ? sourceAnimator.GetBoneTransform(bone)
+                : null;
     }
 }

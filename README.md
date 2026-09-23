@@ -162,14 +162,22 @@ relative to setup"). Mixamo's own rest/bind orientation per bone is arbitrary re
 driving an anchor's rotation directly from it baked that mismatch into every placed duplicate's
 position *and* rotation (`Instantiate` rotates a child's local offset by its parent's rotation) -
 correct-looking in the frozen A-pose (which never touches this rotation at all) but visibly wrong
-once dancing. `AvatarDanceSource` fixes this by calibrating: the moment dancing (re)starts, it
-records the inverse of each relevant bone's current rotation, then every frame afterward reports
-that bone's rotation *relative to that calibration instant* rather than its raw value - zero at the
-instant itself (exactly matching the A-pose anchors, identity rotation), and tracking only the
-limb's own subsequent relative motion from there. Verified live with time frozen (`Time.timeScale =
-0`) right at a toggle-to-dancing: the joint's rotation read back as exactly identity and a
-placed duplicate matched its original captured orientation exactly, then drifted only by the
-limb's actual movement once time resumed.
+once dancing. `AvatarDanceSource` fixes this in two parts:
+
+- **Rest reference.** It captures the humanoid's zero-muscle T-pose once (via `HumanPoseHandler`),
+  swings each limb from its T-pose direction onto the main skeleton's A-pose direction, and reports
+  every bone's rotation *relative to that A-pose orientation*. So the anchors are exactly identity
+  whenever a limb is in the A-pose, and a primitive keeps its place and orientation on the limb
+  through any dance move. (An earlier version calibrated against whatever pose the dance happened to
+  be in when it started, which was wrong whenever that wasn't an A-pose.)
+- **Left/Right.** The main skeleton's "Left" joints sit on +X, which is the humanoid's *Right* side
+  when facing +Z, so each joint name is looked up on the opposite side of the dancer. Without this,
+  a primitive placed on the left arm followed the arm on the other side.
+
+Verified live: every arm/leg segment's predicted limb direction matched the dancer's real limb
+direction to 0.0 degrees at different moments of the dance, and the stand-in's left/right sides match
+the main skeleton's. Torso joints that touch several bones use one of them as reference, so they are
+only approximate.
 
 **Dancing vs. a pose**: either controller's trigger (XRI's "Activate" action - unused elsewhere in
 this project, since only grip and the thumbsticks are already taken) toggles the stand-in between
