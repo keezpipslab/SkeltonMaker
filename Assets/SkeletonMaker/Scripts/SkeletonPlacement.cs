@@ -5,11 +5,12 @@ namespace SkeletonMaker
 {
     /// <summary>
     /// While held, previews where the element would land (SkeletonRig highlights
-    /// the nearest bone). On release: close enough -> parents under that bone
-    /// (estimated as the nearest bone segment) and stays, spawning a replacement
-    /// on the table and triggering the avatar-duplicate hook. Too far -> after a
-    /// grace period (re-grabbing during it cancels this), it reappears back at
-    /// its table slot instead of being lost.
+    /// the nearest hinge joint or bone). On release: a hinge joint (shoulder,
+    /// elbow, wrist, hip, knee, ankle) within range takes priority - parenting
+    /// under that joint's own anchor - since aiming at a joint is the more
+    /// deliberate target; otherwise the nearest bone segment, as before. Too far
+    /// from either -> after a grace period (re-grabbing during it cancels this),
+    /// it reappears back at its table slot instead of being lost.
     /// </summary>
     [RequireComponent(typeof(Grabbable))]
     public class SkeletonPlacement : MonoBehaviour
@@ -62,18 +63,35 @@ namespace SkeletonMaker
             var rig = SkeletonRig.Instance;
             rig?.ClearHeldPreview();
 
-            int boneIndex = -1;
-            float distance = float.MaxValue;
-            if (rig != null) boneIndex = rig.NearestBoneIndex(transform.position, out distance);
+            if (rig != null)
+            {
+                int jointIndex = rig.NearestHingeJointIndex(transform.position, out float jointDistance);
+                if (jointIndex >= 0 && jointDistance <= placeDistance)
+                {
+                    PlaceOnJoint(rig, jointIndex);
+                    return;
+                }
 
-            if (rig != null && distance <= placeDistance)
-            {
-                PlaceOnSkeleton(rig, boneIndex);
+                int boneIndex = rig.NearestBoneIndex(transform.position, out float boneDistance);
+                if (boneIndex >= 0 && boneDistance <= placeDistance)
+                {
+                    PlaceOnSkeleton(rig, boneIndex);
+                    return;
+                }
             }
-            else
-            {
-                discardRoutine = StartCoroutine(DiscardAfterDelay());
-            }
+
+            discardRoutine = StartCoroutine(DiscardAfterDelay());
+        }
+
+        private void PlaceOnJoint(SkeletonRig rig, int jointIndex)
+        {
+            transform.SetParent(rig.HingeJointAnchor(jointIndex), true);
+
+            if (HomeSpawnPoint != null) HomeSpawnPoint.SpawnReplacement();
+
+            // No-ops until a real avatar (Meta Movement SDK) is wired into an
+            // AvatarBodyTarget's joint slots - see AvatarDuplicateManager.
+            AvatarDuplicateManager.Instance?.PlaceDuplicate(rig.HingeJointName(jointIndex), element, transform);
         }
 
         private void PlaceOnSkeleton(SkeletonRig rig, int boneIndex)

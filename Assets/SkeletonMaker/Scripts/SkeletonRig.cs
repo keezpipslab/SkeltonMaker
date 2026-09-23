@@ -51,15 +51,31 @@ namespace SkeletonMaker
             { "RightLowerArm", new Vector3(-0.377f, 1.085f, 0f) },
             { "RightHand", new Vector3(-0.470f, 0.737f, 0f) },
 
+            // Knee kicked slightly forward (+Z) so it's a visible kink rather
+            // than a dead-straight hip-to-ankle line, the same non-collinear
+            // "landmark" treatment the elbow already gets above.
             { "LeftUpperLeg", new Vector3(0.10f, 0.90f, 0f) },
-            { "LeftLowerLeg", new Vector3(0.10f, 0.48f, 0f) },
+            { "LeftLowerLeg", new Vector3(0.10f, 0.48f, 0.04f) },
             { "LeftFoot", new Vector3(0.10f, 0.08f, 0f) },
             { "LeftToes", new Vector3(0.10f, 0.02f, 0.13f) },
 
             { "RightUpperLeg", new Vector3(-0.10f, 0.90f, 0f) },
-            { "RightLowerLeg", new Vector3(-0.10f, 0.48f, 0f) },
+            { "RightLowerLeg", new Vector3(-0.10f, 0.48f, 0.04f) },
             { "RightFoot", new Vector3(-0.10f, 0.08f, 0f) },
             { "RightToes", new Vector3(-0.10f, 0.02f, 0.13f) },
+        };
+
+        // The six limb hinges per side that get their own dedicated placement
+        // target, distinct from "somewhere along this bone" - the point two
+        // bones actually share. Torso joints (hips/spine/chest/neck/head)
+        // stay bone-segment-only, matching how the words "shoulder", "elbow",
+        // "wrist", "hip", "knee" and "ankle" map onto this joint chain.
+        private static readonly string[] HingeJointNames =
+        {
+            "LeftUpperArm", "LeftLowerArm", "LeftHand",
+            "RightUpperArm", "RightLowerArm", "RightHand",
+            "LeftUpperLeg", "LeftLowerLeg", "LeftFoot",
+            "RightUpperLeg", "RightLowerLeg", "RightFoot",
         };
 
         private static readonly (string from, string to)[] Bones =
@@ -74,7 +90,15 @@ namespace SkeletonMaker
         private readonly List<(Vector3 a, Vector3 b)> boneSegmentsLocal = new List<(Vector3, Vector3)>();
         private readonly List<LineRenderer> boneLineRenderers = new List<LineRenderer>();
 
-        private int highlightedBoneIndex = -1;
+        // Parallel to the bone lists above, one entry per HingeJointNames
+        // entry: its own dedicated anchor GameObject, and which bone(s) (by
+        // index into boneSegmentsLocal/boneLineRenderers) touch it - 1 for
+        // the wrist (a leaf, only the forearm bone touches it), 2 for the
+        // other five (the bone ending there and the bone starting there).
+        private readonly List<Transform> hingeJointAnchors = new List<Transform>();
+        private readonly List<int[]> hingeJointIncidentBones = new List<int[]>();
+
+        private readonly List<int> highlightedBoneIndices = new List<int>();
         private MaterialPropertyBlock highlightMpb;
 
         /// <summary>The joint names used both here and by AvatarBodyTarget, so a
@@ -127,7 +151,9 @@ namespace SkeletonMaker
 
             boneSegmentsLocal.Clear();
             boneLineRenderers.Clear();
-            highlightedBoneIndex = -1; // the old bone GameObjects it referred to are gone
+            hingeJointAnchors.Clear();
+            hingeJointIncidentBones.Clear();
+            highlightedBoneIndices.Clear(); // the old bone GameObjects it referred to are gone
 
             foreach (var bone in Bones)
             {
@@ -162,6 +188,21 @@ namespace SkeletonMaker
                 lr.receiveShadows = false;
 
                 boneLineRenderers.Add(lr);
+            }
+
+            foreach (var jointName in HingeJointNames)
+            {
+                var go = new GameObject($"Joint_{jointName}");
+                go.transform.SetParent(transform, false);
+                go.transform.localPosition = Joints[jointName];
+                hingeJointAnchors.Add(go.transform);
+
+                var incident = new List<int>(2);
+                for (int i = 0; i < Bones.Length; i++)
+                {
+                    if (Bones[i].from == jointName || Bones[i].to == jointName) incident.Add(i);
+                }
+                hingeJointIncidentBones.Add(incident.ToArray());
             }
         }
 
@@ -206,35 +247,98 @@ namespace SkeletonMaker
         public string BoneJointName(int index) =>
             index >= 0 && index < Bones.Length ? Bones[index].from : null;
 
+        /// <summary>Index (into the hinge-joint list, HingeJointNames order) of the
+        /// hinge joint - shoulder/elbow/wrist/hip/knee/ankle - nearest worldPoint,
+        /// and its distance. A point distance, not a segment distance: joints are
+        /// single points, not lines.</summary>
+        public int NearestHingeJointIndex(Vector3 worldPoint, out float distance)
+        {
+            int bestIndex = -1;
+            float best = float.MaxValue;
+            for (int i = 0; i < hingeJointAnchors.Count; i++)
+            {
+                float d = Vector3.Distance(worldPoint, hingeJointAnchors[i].position);
+                if (d < best)
+                {
+                    best = d;
+                    bestIndex = i;
+                }
+            }
+            distance = best;
+            return bestIndex;
+        }
+
+        /// <summary>The transform placed elements nearest this hinge joint should
+        /// parent under - a dedicated GameObject at the joint itself (e.g.
+        /// "Joint_LeftLowerArm" for the elbow), not either of its two incident
+        /// bones, so the hierarchy has one unambiguous node per joint.</summary>
+        public Transform HingeJointAnchor(int index) =>
+            index >= 0 && index < hingeJointAnchors.Count ? hingeJointAnchors[index] : transform;
+
+        /// <summary>The joint name (matching AvatarBodyTarget's slots) for this
+        /// hinge joint index.</summary>
+        public string HingeJointName(int index) =>
+            index >= 0 && index < HingeJointNames.Length ? HingeJointNames[index] : null;
+
         /// <summary>Called once per frame while a primitive is held, to preview
-        /// where it would land: brightens the nearest bone as it gets within
-        /// nearHighlightRadius, flipping to placeableColor once within the actual
-        /// placement radius passed in from SkeletonPlacement.</summary>
+        /// where it would land: the nearest hinge joint (if within range) takes
+        /// priority and brightens every bone touching it together (both the upper
+        /// and lower segment for an elbow/knee/etc., matching the priority
+        /// SkeletonPlacement.OnReleased uses); otherwise falls back to brightening
+        /// just the nearest bone segment. Either way, flips to placeableColor once
+        /// within the actual placement radius passed in from SkeletonPlacement.</summary>
         public void UpdateHeldPreview(Vector3 worldPoint, float placeDistance)
         {
-            int nearest = NearestBoneIndex(worldPoint, out float distance);
+            int jointIndex = NearestHingeJointIndex(worldPoint, out float jointDistance);
+            if (jointIndex >= 0 && jointDistance <= nearHighlightRadius)
+            {
+                SetHighlightedBones(hingeJointIncidentBones[jointIndex],
+                    jointDistance <= placeDistance ? placeableColor : nearColor);
+                return;
+            }
 
-            if (nearest < 0 || distance > nearHighlightRadius)
+            int boneIndex = NearestBoneIndex(worldPoint, out float boneDistance);
+            if (boneIndex < 0 || boneDistance > nearHighlightRadius)
             {
                 ClearHeldPreview();
                 return;
             }
 
-            if (nearest != highlightedBoneIndex)
-            {
-                ResetBoneColor(highlightedBoneIndex);
-                highlightedBoneIndex = nearest;
-            }
-
-            SetBoneColor(nearest, distance <= placeDistance ? placeableColor : nearColor);
+            SetHighlightedBones(new[] { boneIndex }, boneDistance <= placeDistance ? placeableColor : nearColor);
         }
 
-        /// <summary>Resets whichever bone is currently highlighted, if any. Safe to
-        /// call any time, including when nothing is highlighted.</summary>
+        /// <summary>Resets whichever bone(s) are currently highlighted, if any. Safe
+        /// to call any time, including when nothing is highlighted.</summary>
         public void ClearHeldPreview()
         {
-            ResetBoneColor(highlightedBoneIndex);
-            highlightedBoneIndex = -1;
+            foreach (int i in highlightedBoneIndices) ResetBoneColor(i);
+            highlightedBoneIndices.Clear();
+        }
+
+        private void SetHighlightedBones(IReadOnlyList<int> indices, Color color)
+        {
+            // Reset any previously-highlighted bone that isn't part of the new set
+            // (e.g. moving from one joint's pair to a single mid-bone highlight).
+            for (int i = highlightedBoneIndices.Count - 1; i >= 0; i--)
+            {
+                if (!Contains(indices, highlightedBoneIndices[i]))
+                {
+                    ResetBoneColor(highlightedBoneIndices[i]);
+                    highlightedBoneIndices.RemoveAt(i);
+                }
+            }
+
+            foreach (int index in indices)
+            {
+                SetBoneColor(index, color);
+                if (!highlightedBoneIndices.Contains(index)) highlightedBoneIndices.Add(index);
+            }
+        }
+
+        private static bool Contains(IReadOnlyList<int> list, int value)
+        {
+            for (int i = 0; i < list.Count; i++) if (list[i] == value) return true;
+            return false;
         }
 
         private void SetBoneColor(int index, Color color)

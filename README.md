@@ -26,10 +26,16 @@ Open scene: `Assets/SkeletonMaker/Scenes/SkeletonBuilder.unity`
   - Right stick **Y**: depth (local Z)
 - **Hold near the skeleton**: the nearest bone line brightens (yellow) as the held element gets
   within 35cm, turning green once within the 15cm placement radius - previewing which bone it'll
-  land on before you let go.
-- **Release near/on the skeleton** (within 15cm of a bone line): the element stays, parented under
-  that specific bone (e.g. `Bone_LeftUpperArm_LeftLowerArm`) rather than the skeleton root, and a
-  fresh copy appears back at its table slot.
+  land on before you let go. Near a hinge joint (shoulder, elbow, wrist, hip, knee, ankle), both
+  bones meeting there brighten together instead of just one, signaling you're aiming at the joint
+  itself rather than partway along a limb.
+- **Release near/on a hinge joint** (within 15cm of a shoulder/elbow/wrist/hip/knee/ankle): the
+  element stays, parented under that joint specifically (e.g. `Joint_LeftLowerArm` for the elbow) -
+  takes priority over the bone check below even if a bone segment is technically a hair closer,
+  since aiming at a joint is the more deliberate target.
+- **Release near/on a bone elsewhere** (within 15cm of a bone line, away from a hinge joint): the
+  element stays, parented under that specific bone (e.g. `Bone_LeftUpperArm_LeftLowerArm`) rather
+  than the skeleton root, and a fresh copy appears back at its table slot.
 - **Release far away**: the element waits 4s (grace period to re-grab it), then teleports back to
   its home slot on the table (the same instance - re-grabbing during the 4s cancels this).
 
@@ -53,20 +59,29 @@ Open scene: `Assets/SkeletonMaker/Scenes/SkeletonBuilder.unity`
   nearest `Grabbable`.
 - `HeldElementScaler` - the thumbstick-to-size mapping described above.
 - `SkeletonRig` - the line skeleton itself (`LineRenderer` per bone) and
-  `NearestBoneIndex(worldPoint)` used both for the placement check and to estimate which bone/joint
-  a primitive is being placed on. 21 joints matching Unity's HumanBodyBones chain (hips/spine/
+  `NearestBoneIndex(worldPoint)` used both for the placement check and to estimate which bone a
+  primitive is being placed on. 21 joints matching Unity's HumanBodyBones chain (hips/spine/
   chest/neck/head, shoulder-upperarm-lowerarm-hand per arm, upperleg-lowerleg-foot-toes per leg) -
   the same joint set/connectivity the rayMarchVR project's `RaymarchAvatarSource` drives live off a
   Humanoid Animator, but frozen here into a fixed A-pose (arms angled ~35 degrees down and out from
-  the shoulders) instead of being posed at runtime. Also owns the hold-proximity color preview
-  (`UpdateHeldPreview`/`ClearHeldPreview`, via a `MaterialPropertyBlock` override per bone so it
-  works regardless of whether the assigned line material honors per-vertex colors) and exposes each
+  the shoulders, knees kicked slightly forward) instead of being posed at runtime. Exposes each
   bone's own GameObject as `BoneAnchor(index)` - positioned at that bone's own ("from") joint, so an
-  element parented under it (`SkeletonPlacement.PlaceOnSkeleton`) gets a small, meaningful local
-  offset from the joint it landed on rather than from the whole rig's origin - and its
-  `BoneJointName(index)` - the joint-name key shared with `AvatarBodyTarget`.
-- `SkeletonPlacement` - the keep-vs-discard rule on release; on keep, resolves and parents under
-  the nearest bone (not the rig root) and triggers `AvatarDuplicateManager`.
+  element parented under it gets a small, meaningful local offset from the joint it landed on rather
+  than from the whole rig's origin - and its `BoneJointName(index)`, the joint-name key shared with
+  `AvatarBodyTarget`.
+  Separately, the six limb hinges per side - shoulder, elbow, wrist, hip, knee, ankle, 12 total -
+  each get their own dedicated `Joint_<name>` GameObject (`NearestHingeJointIndex`/
+  `HingeJointAnchor`/`HingeJointName`), distinct from the bone-segment anchors above: a hinge joint
+  is the point *shared* by two bones, and picking whichever of the two adjacent segments is a hair
+  closer numerically doesn't read as "you're at the joint." `Joint_<name>` is one unambiguous node
+  per hinge instead.
+  Also owns the hold-proximity color preview (`UpdateHeldPreview`/`ClearHeldPreview`, via a
+  `MaterialPropertyBlock` override per bone so it works regardless of whether the assigned line
+  material honors per-vertex colors) - checks the nearest hinge joint first (highlighting every bone
+  touching it together) before falling back to the single nearest bone segment.
+- `SkeletonPlacement` - the keep-vs-discard rule on release. A hinge joint within range takes
+  priority over a bone segment (`PlaceOnJoint` vs `PlaceOnSkeleton`) - either way it parents under
+  the resolved anchor (not the rig root) and triggers `AvatarDuplicateManager`.
 - `TableSpawnPoint` - one table slot; spawns a replacement when notified.
 - `AvatarBodyTarget` - placeholder joint-name -> Transform map for the player's own avatar body,
   meant to eventually sit on whatever Meta's Movement SDK (Body Tracking) drives. Its joint slot
@@ -104,9 +119,10 @@ transparent, non-interactive duplicate at the matching joint whenever a primitiv
 already works without further changes.
 
 **Until then**, the scene has a visible `Avatar Stand-In (Preview)` GameObject - a second, static
-copy of the line-skeleton visual standing a couple meters beside the table - so the duplicate
-feature can actually be seen working today. `AvatarBodyTarget (Placeholder)`'s joint slots are
-wired to this stand-in's matching bones (by name), so placing a primitive on the real skeleton
+copy of the line-skeleton visual (both its bone segments and its 12 hinge-joint anchors) standing a
+couple meters beside the table - so the duplicate feature can actually be seen working today.
+`AvatarBodyTarget (Placeholder)`'s joint slots are wired to this stand-in's matching bones/joints
+(by name), so placing a primitive on the real skeleton - on a bone or right at a hinge joint -
 mirrors a faint transparent copy onto the corresponding spot on the stand-in. This is **not** real
 body tracking - the stand-in never moves - it's purely a placeholder to preview/test the mirroring
 logic. When the Movement SDK is installed, repoint `AvatarBodyTarget`'s joint slots at the real
