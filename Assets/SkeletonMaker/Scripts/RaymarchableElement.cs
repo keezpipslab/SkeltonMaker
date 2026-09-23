@@ -24,6 +24,12 @@ namespace SkeletonMaker
         // existing child, the former must replace it.
         [SerializeField, HideInInspector] private int builtKindRaw = -1;
 
+        // Persisted for the same reason as builtKindRaw above (survives
+        // domain reloads); captures the size a fresh instance started at, so
+        // ResetSize() can restore it later regardless of reload timing.
+        [SerializeField, HideInInspector] private Vector3 defaultSize;
+        [SerializeField, HideInInspector] private bool defaultSizeCaptured;
+
         private Transform visual;
         private BoxCollider boxCollider;
 
@@ -43,8 +49,22 @@ namespace SkeletonMaker
         {
             boxCollider = GetComponent<BoxCollider>();
             boxCollider.isTrigger = true;
+
+            // The size a fresh instance of this prefab starts at, captured
+            // once before anything (e.g. HeldElementScaler) has a chance to
+            // change it - ResetSize() puts it back to this.
+            if (!defaultSizeCaptured)
+            {
+                defaultSize = size;
+                defaultSizeCaptured = true;
+            }
+
             SyncVisual();
         }
+
+        /// <summary>Puts Size back to what this instance started at (its prefab's
+        /// authored size), e.g. when an element returns to the table unplaced.</summary>
+        public void ResetSize() => Size = defaultSizeCaptured ? defaultSize : size;
 
         /// <summary>Rebuilds the visual mesh if Kind changed since it was last built,
         /// then reapplies Size. Safe to call any time (editor tooling included).</summary>
@@ -109,16 +129,26 @@ namespace SkeletonMaker
             go.transform.localRotation = Quaternion.identity;
             visual = go.transform;
             builtKindRaw = (int)kind;
-
-            if (material != null)
-            {
-                go.GetComponent<MeshRenderer>().sharedMaterial = material;
-            }
         }
 
         private void Apply()
         {
-            if (visual != null) visual.localScale = LocalScaleFor(visual, size);
+            if (visual != null)
+            {
+                visual.localScale = LocalScaleFor(visual, size);
+
+                // Always reapply (not just right after BuildVisual creates a
+                // fresh visual): if Kind's default value happens to match
+                // builtKindRaw from the very first Awake-time build (true for
+                // Sphere, kind 0), BuildVisual's "reuse the existing visual"
+                // path returns before material is ever set on it otherwise.
+                if (material != null)
+                {
+                    var renderer = visual.GetComponent<MeshRenderer>();
+                    if (renderer != null && renderer.sharedMaterial != material) renderer.sharedMaterial = material;
+                }
+            }
+
             if (boxCollider != null) boxCollider.size = size;
         }
 
