@@ -13,8 +13,8 @@ namespace SkeletonMaker
     {
         [SerializeField] private InputActionReference leftThumbstick;
         [SerializeField] private InputActionReference rightThumbstick;
-        [SerializeField] private float uniformSpeed = 0.25f; // meters/sec at full deflection
-        [SerializeField] private float axisSpeed = 0.25f;
+        [SerializeField] private float uniformSpeed = 0.6f; // fraction of current size/sec at full deflection
+        [SerializeField] private float axisSpeed = 0.25f; // meters/sec at full deflection
         [SerializeField] private float deadzone = 0.15f;
 
         private Grabbable grabbable;
@@ -35,7 +35,16 @@ namespace SkeletonMaker
             float dt = Time.deltaTime;
 
             Vector3 size = element.Size;
-            size += Vector3.one * (WithDeadzone(left.y) * uniformSpeed * dt);
+
+            // Uniform must multiply (preserve the existing x:y:z ratio) rather
+            // than add the same delta to every axis - adding a constant drifts
+            // an already non-uniform shape toward a cube (or away from one)
+            // instead of scaling it evenly.
+            float uniformFactor = 1f + WithDeadzone(left.y) * uniformSpeed * dt;
+            size *= uniformFactor;
+
+            // The 3 independent axes are deliberately additive (in meters),
+            // since their whole point is to change the shape's proportions.
             size.y += WithDeadzone(left.x) * axisSpeed * dt;
             size.x += WithDeadzone(right.x) * axisSpeed * dt;
             size.z += WithDeadzone(right.y) * axisSpeed * dt;

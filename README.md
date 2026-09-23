@@ -19,7 +19,8 @@ Open scene: `Assets/SkeletonMaker/Scenes/SkeletonBuilder.unity`
   element within reach and parents it to the hand, keeping the exact orientation/offset it was
   grabbed in (no snapping).
 - **Resize while held** (uses both thumbsticks regardless of which hand is holding):
-  - Left stick **Y**: uniform scale (all 3 axes together)
+  - Left stick **Y**: uniform scale - multiplies all 3 axes by the same factor, so it preserves
+    whatever shape the other 3 controls already gave it instead of pulling it back toward a cube
   - Left stick **X**: height (local Y)
   - Right stick **X**: width (local X)
   - Right stick **Y**: depth (local Z)
@@ -49,7 +50,11 @@ Open scene: `Assets/SkeletonMaker/Scenes/SkeletonBuilder.unity`
   nearest `Grabbable`.
 - `HeldElementScaler` - the thumbstick-to-size mapping described above.
 - `SkeletonRig` - the line skeleton itself (`LineRenderer` per bone) and
-  `DistanceToNearestBone(worldPoint)` used for the placement check.
+  `DistanceToNearestBone(worldPoint)` used for the placement check. 21 joints matching Unity's
+  HumanBodyBones chain (hips/spine/chest/neck/head, shoulder-upperarm-lowerarm-hand per arm,
+  upperleg-lowerleg-foot-toes per leg) - the same joint set/connectivity the rayMarchVR project's
+  `RaymarchAvatarSource` drives live off a Humanoid Animator, but frozen here into a fixed A-pose
+  (arms angled ~35 degrees down and out from the shoulders) instead of being posed at runtime.
 - `SkeletonPlacement` - the keep-vs-discard rule on release.
 - `TableSpawnPoint` - one table slot; spawns a replacement when notified.
 

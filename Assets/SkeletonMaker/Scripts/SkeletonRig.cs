@@ -6,7 +6,11 @@ namespace SkeletonMaker
     /// <summary>
     /// Minimal life-size humanoid skeleton drawn as thin lines - a placement
     /// guide only, not raymarched and carrying no mesh geometry of its own.
-    /// No hand or foot geometry: limbs end at the wrist/ankle.
+    /// The joint set and connectivity mirror Unity's HumanBodyBones (the
+    /// same 21-bone chain a live Humanoid Animator would drive - see the
+    /// rayMarchVR project's RaymarchAvatarSource for that live version),
+    /// but frozen into a fixed A-pose (standing, arms angled down and out
+    /// from the shoulders) instead of being posed by an Animator.
     /// </summary>
     [ExecuteAlways]
     public class SkeletonRig : MonoBehaviour
@@ -20,35 +24,42 @@ namespace SkeletonMaker
         private static readonly Dictionary<string, Vector3> Joints = new Dictionary<string, Vector3>
         {
             { "Hips", new Vector3(0f, 0.95f, 0f) },
-            { "Spine", new Vector3(0f, 1.10f, 0f) },
-            { "Chest", new Vector3(0f, 1.30f, 0f) },
-            { "Neck", new Vector3(0f, 1.50f, 0f) },
-            { "Head", new Vector3(0f, 1.65f, 0f) },
+            { "Spine", new Vector3(0f, 1.08f, 0f) },
+            { "Chest", new Vector3(0f, 1.25f, 0f) },
+            { "Neck", new Vector3(0f, 1.45f, 0f) },
+            { "Head", new Vector3(0f, 1.60f, 0f) },
 
-            { "LeftShoulder", new Vector3(0.18f, 1.45f, 0f) },
-            { "LeftElbow", new Vector3(0.45f, 1.20f, 0f) },
-            { "LeftWrist", new Vector3(0.65f, 0.95f, 0f) },
+            // Arms angled ~35 degrees down and out from the shoulder (A-pose):
+            // each bone below LeftUpperArm/RightUpperArm steps outward by
+            // sin(35 deg)*boneLength and down by cos(35 deg)*boneLength.
+            { "LeftShoulder", new Vector3(0.09f, 1.42f, 0f) },
+            { "LeftUpperArm", new Vector3(0.17f, 1.38f, 0f) },
+            { "LeftLowerArm", new Vector3(0.377f, 1.085f, 0f) },
+            { "LeftHand", new Vector3(0.583f, 0.790f, 0f) },
 
-            { "RightShoulder", new Vector3(-0.18f, 1.45f, 0f) },
-            { "RightElbow", new Vector3(-0.45f, 1.20f, 0f) },
-            { "RightWrist", new Vector3(-0.65f, 0.95f, 0f) },
+            { "RightShoulder", new Vector3(-0.09f, 1.42f, 0f) },
+            { "RightUpperArm", new Vector3(-0.17f, 1.38f, 0f) },
+            { "RightLowerArm", new Vector3(-0.377f, 1.085f, 0f) },
+            { "RightHand", new Vector3(-0.583f, 0.790f, 0f) },
 
-            { "LeftHip", new Vector3(0.10f, 0.90f, 0f) },
-            { "LeftKnee", new Vector3(0.10f, 0.48f, 0f) },
-            { "LeftAnkle", new Vector3(0.10f, 0.08f, 0f) },
+            { "LeftUpperLeg", new Vector3(0.10f, 0.90f, 0f) },
+            { "LeftLowerLeg", new Vector3(0.10f, 0.48f, 0f) },
+            { "LeftFoot", new Vector3(0.10f, 0.08f, 0f) },
+            { "LeftToes", new Vector3(0.10f, 0.02f, 0.13f) },
 
-            { "RightHip", new Vector3(-0.10f, 0.90f, 0f) },
-            { "RightKnee", new Vector3(-0.10f, 0.48f, 0f) },
-            { "RightAnkle", new Vector3(-0.10f, 0.08f, 0f) },
+            { "RightUpperLeg", new Vector3(-0.10f, 0.90f, 0f) },
+            { "RightLowerLeg", new Vector3(-0.10f, 0.48f, 0f) },
+            { "RightFoot", new Vector3(-0.10f, 0.08f, 0f) },
+            { "RightToes", new Vector3(-0.10f, 0.02f, 0.13f) },
         };
 
         private static readonly (string from, string to)[] Bones =
         {
             ("Hips", "Spine"), ("Spine", "Chest"), ("Chest", "Neck"), ("Neck", "Head"),
-            ("Chest", "LeftShoulder"), ("LeftShoulder", "LeftElbow"), ("LeftElbow", "LeftWrist"),
-            ("Chest", "RightShoulder"), ("RightShoulder", "RightElbow"), ("RightElbow", "RightWrist"),
-            ("Hips", "LeftHip"), ("LeftHip", "LeftKnee"), ("LeftKnee", "LeftAnkle"),
-            ("Hips", "RightHip"), ("RightHip", "RightKnee"), ("RightKnee", "RightAnkle"),
+            ("Chest", "LeftShoulder"), ("LeftShoulder", "LeftUpperArm"), ("LeftUpperArm", "LeftLowerArm"), ("LeftLowerArm", "LeftHand"),
+            ("Chest", "RightShoulder"), ("RightShoulder", "RightUpperArm"), ("RightUpperArm", "RightLowerArm"), ("RightLowerArm", "RightHand"),
+            ("Hips", "LeftUpperLeg"), ("LeftUpperLeg", "LeftLowerLeg"), ("LeftLowerLeg", "LeftFoot"), ("LeftFoot", "LeftToes"),
+            ("Hips", "RightUpperLeg"), ("RightUpperLeg", "RightLowerLeg"), ("RightLowerLeg", "RightFoot"), ("RightFoot", "RightToes"),
         };
 
         private readonly List<(Vector3 a, Vector3 b)> boneSegmentsLocal = new List<(Vector3, Vector3)>();
