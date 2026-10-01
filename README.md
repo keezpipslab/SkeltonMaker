@@ -128,6 +128,9 @@ quad path, but primitives-only and rewritten to this project's conventions.
   specular, shadow/AO strength, max steps, background) live on the component.
   **Show Held** (on by default, gold **Held Color**) also draws the primitive currently held in a hand,
   which is not under any source root (`Grabbable.Held` tracks what is in a hand).
+- The quad itself can be moved: squeeze the **left** controller's grip while your hand is at the quad
+  (`RaymarchQuadGrab`, kept separate from the `Grabbable`/`HandGrabber` system used by placeable primitives
+  so the right hand - which shares that system's layer mask with every primitive - never competes for it).
 - Shape kind: the parent's `RaymarchShape` (stand-in duplicates - `AvatarDuplicateManager` now adds
   one, since it strips `RaymarchableElement`), else its `RaymarchableElement` (main skeleton), else
   parsed from the mesh name (covers duplicates made before `RaymarchShape` existed).

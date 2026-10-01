@@ -1,6 +1,7 @@
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.Rendering;
 
 namespace SkeletonMaker
@@ -32,6 +33,11 @@ namespace SkeletonMaker
             go.name = "Raymarch Quad";
             Object.DestroyImmediate(go.GetComponent<Collider>());
             Undo.RegisterCreatedObjectUndo(go, "Add Raymarch Quad");
+
+            // Thin box over the quad's local 1x1 face, just for the left-hand grab check below.
+            var box = go.AddComponent<BoxCollider>();
+            box.size = new Vector3(1f, 1f, 0.05f);
+            box.isTrigger = true;
 
             // Stand 1m in front of the stand-in, facing whoever is looking at
             // it (the XR camera, or the world origin as a fallback), tall
@@ -68,8 +74,29 @@ namespace SkeletonMaker
                 });
             }
 
+            var grab = go.AddComponent<RaymarchQuadGrab>();
+            var leftController = GameObject.Find("Left Controller");
+            if (leftController != null)
+            {
+                var so = new SerializedObject(grab);
+                so.FindProperty("leftController").objectReferenceValue = leftController.transform;
+                so.FindProperty("leftGripAction").objectReferenceValue = FindLeftGripAction();
+                so.ApplyModifiedPropertiesWithoutUndo();
+            }
+
             Selection.activeGameObject = go;
             EditorSceneManager.MarkSceneDirty(go.scene);
+        }
+
+        private static InputActionReference FindLeftGripAction()
+        {
+            const string path = "Assets/Samples/XR Interaction Toolkit/3.5.1/Starter Assets/XRI Default Input Actions.inputactions";
+            foreach (var asset in AssetDatabase.LoadAllAssetRepresentationsAtPath(path))
+            {
+                if (asset is InputActionReference iar && iar.name == "XRI Left Interaction/Select") return iar;
+            }
+            Debug.LogWarning("RaymarchQuadMenu: could not find the 'XRI Left Interaction/Select' action to wire up quad grabbing.");
+            return null;
         }
 
         private static Material GetOrCreateMaterial()
