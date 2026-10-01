@@ -310,6 +310,32 @@ Shader "SkeletonMaker/RaymarchQuad"
                 return float2(-b - h, -b + h);
             }
 
+            // Union of this ray's hit intervals against every shape's own bounding
+            // sphere (padded by the blend radius), instead of one sphere around the
+            // whole scene. _RMQ_SceneBounds covers every shape no matter how far
+            // apart they are (e.g. the dancer and a separate cluster of table
+            // primitives), so a ray through the empty gap between two such clusters
+            // would otherwise still pass that one big sphere's cull test and pay
+            // the full march below for nothing. Per-shape spheres let a ray that
+            // comes near neither cluster bail out here for the cost of a few dot
+            // products, no matter how far apart the clusters are.
+            float2 ShapesRange(float3 ro, float3 rd)
+            {
+                float tMin = 1e20;
+                float tMax = -1e20;
+
+                [loop]
+                for (int i = 0; i < _RMQ_ShapeCount; i++)
+                {
+                    float4 bounds = _RMQ_ShapeBounds[i];
+                    float2 r = RaySphere(ro, rd, float4(bounds.xyz, bounds.w + _RMQ_Smoothing));
+                    if (r.y < r.x) continue;
+                    tMin = min(tMin, r.x);
+                    tMax = max(tMax, r.y);
+                }
+                return float2(tMin, tMax);
+            }
+
             // -----------------------------------------------------------------
 
             struct Attributes
@@ -355,9 +381,10 @@ Shader "SkeletonMaker/RaymarchQuad"
                 float surfaceDist = length(toSurface);
                 float3 rd = toSurface / surfaceDist;
 
-                // Only march the stretch of ray inside the shapes' bounding
-                // sphere - pixels that miss it cost nothing beyond this test.
-                float2 range = RaySphere(eye, rd, _RMQ_SceneBounds);
+                // Only march the stretch of ray that actually passes near some
+                // shape - pixels that miss every shape cost nothing beyond this.
+                float2 range = ShapesRange(eye, rd);
+                if (range.y < range.x) return Background();
                 float tStart = max(range.x, _StartAtSurface > 0.5 ? surfaceDist : 0.0);
                 if (range.y < tStart) return Background();
 
