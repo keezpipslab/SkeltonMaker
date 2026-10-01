@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.Rendering;
 
 namespace SkeletonMaker
@@ -40,6 +41,9 @@ namespace SkeletonMaker
             public Transform root;
             public bool visible = true;
             public Color color = new Color(0.85f, 0.85f, 0.9f);
+
+            [Tooltip("Included when ToggleContext() runs (e.g. from the left controller's primary button), as one combined on/off group with 'Show Table' instead of its own separate control.")]
+            public bool includeInContextToggle;
         }
 
         [Tooltip("Where shapes are gathered from. Toggle 'visible' at runtime (Inspector, or ToggleSource()/SetSourceVisible() from code) to show/hide a whole skeleton's shapes. Shared cap of MaxShapes across all sources, first come first served.")]
@@ -48,6 +52,19 @@ namespace SkeletonMaker
         [Tooltip("Also draw the primitive currently held in a hand (it is not under any source root).")]
         public bool showHeld = true;
         public Color heldColor = new Color(1f, 0.85f, 0.4f);
+
+        [Tooltip("Also draw every spawned primitive that is not yet placed on a skeleton and not currently held - i.e. still sitting on the table. Toggled together with every source whose 'Include In Context Toggle' is set by ToggleContext() (wire a controller button to it, or call it directly).")]
+        public bool showTable = true;
+        public Color tableColor = new Color(0.55f, 0.85f, 0.55f);
+
+        [Tooltip("Left controller button that calls ToggleContext() - hides/shows Show Table plus every source marked Include In Context Toggle (e.g. the static main skeleton), so you can declutter down to just the dancer.")]
+        [SerializeField] private InputActionReference contextToggleAction;
+
+        [Header("Left Thumbstick - Smoothing")]
+        [Tooltip("Left thumbstick's vertical axis raises/lowers Smoothing over time (push up to smooth more, down to sharpen towards a hard union).")]
+        [SerializeField] private InputActionReference smoothingThumbstick;
+        [SerializeField] private float smoothingAdjustSpeed = 0.15f; // smoothing units/sec at full deflection
+        [SerializeField] private float smoothingDeadzone = 0.15f;
 
         [Header("Quality")]
         [Range(8, 128)]
@@ -134,16 +151,43 @@ namespace SkeletonMaker
             if (index >= 0 && index < sources.Count) sources[index].visible = !sources[index].visible;
         }
 
+        /// <summary>Flips Show Table and every source marked Include In Context Toggle together, as one on/off group.</summary>
+        public void ToggleContext()
+        {
+            bool newState = !showTable;
+            showTable = newState;
+            foreach (var source in sources)
+                if (source != null && source.includeInContextToggle) source.visible = newState;
+        }
+
         private void OnEnable()
         {
             _renderer = GetComponent<MeshRenderer>();
             _block ??= new MaterialPropertyBlock();
             RenderPipelineManager.beginContextRendering += OnBeginContextRendering;
+
+            if (contextToggleAction != null)
+            {
+                contextToggleAction.action.Enable();
+                contextToggleAction.action.performed += OnContextTogglePerformed;
+            }
+            if (smoothingThumbstick != null) smoothingThumbstick.action.Enable();
         }
 
         private void OnDisable()
         {
             RenderPipelineManager.beginContextRendering -= OnBeginContextRendering;
+            if (contextToggleAction != null) contextToggleAction.action.performed -= OnContextTogglePerformed;
+        }
+
+        private void OnContextTogglePerformed(InputAction.CallbackContext ctx) => ToggleContext();
+
+        private void Update()
+        {
+            if (smoothingThumbstick == null) return;
+            float y = smoothingThumbstick.action.ReadValue<Vector2>().y;
+            if (Mathf.Abs(y) < smoothingDeadzone) return;
+            smoothing = Mathf.Clamp(smoothing + y * smoothingAdjustSpeed * Time.deltaTime, 0f, 0.3f);
         }
 
         private void OnBeginContextRendering(ScriptableRenderContext context, List<Camera> cameras)
@@ -210,6 +254,26 @@ namespace SkeletonMaker
                     grabbable.GetComponentsInChildren(false, _filters);
                     foreach (var filter in _filters)
                         TryAddShape(filter, heldColor, ref count, ref min, ref max);
+                }
+            }
+
+            if (showTable)
+            {
+                var rig = SkeletonRig.Instance != null ? SkeletonRig.Instance : FindFirstObjectByType<SkeletonRig>();
+                foreach (var element in FindObjectsByType<RaymarchableElement>(FindObjectsSortMode.None))
+                {
+                    if (count >= MaxShapes) break;
+
+                    // Held is its own toggle/color above; placed-on-the-skeleton primitives belong to
+                    // the "Main skeleton" source (its anchor's parent is the rig root) - what's left
+                    // here is whatever is still sitting loose on the table.
+                    if (element.TryGetComponent(out Grabbable grabbable) && grabbable.IsHeld) continue;
+                    Transform anchor = element.transform.parent;
+                    if (rig != null && anchor != null && anchor.parent == rig.transform) continue;
+
+                    element.GetComponentsInChildren(false, _filters);
+                    foreach (var filter in _filters)
+                        TryAddShape(filter, tableColor, ref count, ref min, ref max);
                 }
             }
 

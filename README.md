@@ -128,9 +128,19 @@ quad path, but primitives-only and rewritten to this project's conventions.
   specular, shadow/AO strength, max steps, background) live on the component.
   **Show Held** (on by default, gold **Held Color**) also draws the primitive currently held in a hand,
   which is not under any source root (`Grabbable.Held` tracks what is in a hand).
+  **Show Table** (on by default, green **Table Color**) draws every `RaymarchableElement` in the scene
+  that is neither placed on a skeleton (its anchor's parent isn't the rig) nor currently held - i.e.
+  whatever's still sitting loose on the table.
 - The quad itself can be moved: squeeze the **left** controller's grip while your hand is at the quad
   (`RaymarchQuadGrab`, kept separate from the `Grabbable`/`HandGrabber` system used by placeable primitives
   so the right hand - which shares that system's layer mask with every primitive - never competes for it).
+- The left controller's primary button (X) calls `ToggleContext()`, which flips **Show Table** together
+  with every source whose **Include In Context Toggle** is ticked (the menu ticks it for the main
+  skeleton) - one press declutters down to just the dancer, another press brings the table and
+  reference pose back.
+- The left thumbstick's vertical axis raises/lowers **Smoothing** over time (push up to blend shapes
+  together more, down towards a hard union) - the same held-stick-changes-a-value-over-time technique
+  `HeldElementScaler` uses for resizing, just driving the quad's blend radius instead of an element's size.
 - Shape kind: the parent's `RaymarchShape` (stand-in duplicates - `AvatarDuplicateManager` now adds
   one, since it strips `RaymarchableElement`), else its `RaymarchableElement` (main skeleton), else
   parsed from the mesh name (covers duplicates made before `RaymarchShape` existed).

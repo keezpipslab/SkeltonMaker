@@ -71,8 +71,14 @@ namespace SkeletonMaker
                     root = skeleton.transform,
                     visible = false,
                     color = new Color(0.95f, 0.7f, 0.45f),
+                    includeInContextToggle = true,
                 });
             }
+
+            var soQuad = new SerializedObject(quad);
+            soQuad.FindProperty("contextToggleAction").objectReferenceValue = FindAction("XRI Left Interaction/Toggle Context");
+            soQuad.FindProperty("smoothingThumbstick").objectReferenceValue = FindAction("XRI Left/Thumbstick");
+            soQuad.ApplyModifiedPropertiesWithoutUndo();
 
             var grab = go.AddComponent<RaymarchQuadGrab>();
             var leftController = GameObject.Find("Left Controller");
@@ -80,7 +86,7 @@ namespace SkeletonMaker
             {
                 var so = new SerializedObject(grab);
                 so.FindProperty("leftController").objectReferenceValue = leftController.transform;
-                so.FindProperty("leftGripAction").objectReferenceValue = FindLeftGripAction();
+                so.FindProperty("leftGripAction").objectReferenceValue = FindAction("XRI Left Interaction/Select");
                 so.ApplyModifiedPropertiesWithoutUndo();
             }
 
@@ -88,14 +94,14 @@ namespace SkeletonMaker
             EditorSceneManager.MarkSceneDirty(go.scene);
         }
 
-        private static InputActionReference FindLeftGripAction()
+        private static InputActionReference FindAction(string mapSlashActionName)
         {
             const string path = "Assets/Samples/XR Interaction Toolkit/3.5.1/Starter Assets/XRI Default Input Actions.inputactions";
             foreach (var asset in AssetDatabase.LoadAllAssetRepresentationsAtPath(path))
             {
-                if (asset is InputActionReference iar && iar.name == "XRI Left Interaction/Select") return iar;
+                if (asset is InputActionReference iar && iar.name == mapSlashActionName) return iar;
             }
-            Debug.LogWarning("RaymarchQuadMenu: could not find the 'XRI Left Interaction/Select' action to wire up quad grabbing.");
+            Debug.LogWarning($"RaymarchQuadMenu: could not find the '{mapSlashActionName}' action.");
             return null;
         }
 
