@@ -55,6 +55,7 @@ namespace SkeletonMaker
                 skeletons[id] = skeleton;
             }
             skeleton.ExtraShift = own ? echoShift : Vector3.zero;
+            skeleton.InTheRoom = !own && !link.RemoteIsThisPc;
             skeleton.Handle(leaf, message);
         }
 

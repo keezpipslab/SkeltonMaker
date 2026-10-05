@@ -12,6 +12,9 @@ namespace SkeletonMaker
     /// </summary>
     public class RemoteSkeleton : MonoBehaviour
     {
+        // A safe offset smaller than this (meters) is no safe offset.
+        private const float OnTopOfPerformer = 0.5f;
+
         private readonly NetworkPoseSource source = new NetworkPoseSource();
         private readonly AvatarDriver driver = new AvatarDriver();
         private readonly List<GameObject> ghosts = new List<GameObject>();
@@ -36,6 +39,10 @@ namespace SkeletonMaker
 
         /// <summary>Added on top of the usual offset (BodyReceiver's echo shift, for meeting yourself).</summary>
         public Vector3 ExtraShift { get; set; }
+
+        /// <summary>Whether this could be a person standing in the same room (it came from
+        /// another PC), as opposed to a fake peer, an echo or a recording on this one.</summary>
+        public bool InTheRoom { get; set; }
 
         public void Build(float lineWidth, Material lineMaterial, Color lineColor)
         {
@@ -133,6 +140,8 @@ namespace SkeletonMaker
             }
         }
 
+        private void OnDestroy() => PassthroughView.Require(this, false);
+
         private void LateUpdate()
         {
             if (body == null) return;
@@ -140,6 +149,7 @@ namespace SkeletonMaker
             {
                 // Gone quiet: better no body than one frozen mid-step.
                 if (body.gameObject.activeSelf) body.gameObject.SetActive(false);
+                PassthroughView.Require(this, false);
                 return;
             }
 
@@ -147,6 +157,10 @@ namespace SkeletonMaker
             StageFrame.StageToWorld(out Vector3 origin, out Quaternion heading);
             Vector3 offset = shift - StageFrame.LocalShift + ExtraShift;
             driver.Place(heading, -offset, origin);
+
+            // Drawn (nearly) where the performer really stands: in one room that is
+            // a person to walk into, so the room has to be visible.
+            PassthroughView.Require(this, InTheRoom && offset.sqrMagnitude < OnTopOfPerformer * OnTopOfPerformer);
             if (!body.gameObject.activeSelf) body.gameObject.SetActive(true);
             driver.Drive(source, body);
         }

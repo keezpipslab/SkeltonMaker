@@ -45,6 +45,11 @@ namespace SkeletonMaker
         public int PerformerId => performerId;
         public bool AcceptOwnId => acceptOwnId;
 
+        /// <summary>True while Remote Host is this PC itself: everyone on the stage is
+        /// then a test (the fake peer, an echo, a recording), not a person in the room.</summary>
+        public bool RemoteIsThisPc =>
+            remoteHost == "localhost" || (IPAddress.TryParse(remoteHost, out IPAddress address) && IPAddress.IsLoopback(address));
+
         /// <summary>Every message that came in, on the main thread.</summary>
         public event Action<OscMessage> Received;
 

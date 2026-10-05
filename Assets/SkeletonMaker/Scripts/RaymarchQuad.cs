@@ -102,6 +102,9 @@ namespace SkeletonMaker
         [Tooltip("Color where a ray misses every shape (unless the material's Clip Background is on).")]
         public Color backgroundColor = new Color(0.08f, 0.08f, 0.1f);
 
+        [Tooltip("Draw only the shapes and leave the rest of the quad empty, as the material's Clip Background does. Switched on by PassthroughView while the real room is shown.")]
+        public bool clipBackground;
+
         /// <summary>How many shapes were sent to the shader last frame.</summary>
         public int ShapeCount { get; private set; }
 
@@ -124,6 +127,7 @@ namespace SkeletonMaker
         private static readonly int ShadowStrengthId = Shader.PropertyToID("_RMQ_ShadowStrength");
         private static readonly int OcclusionStrengthId = Shader.PropertyToID("_RMQ_OcclusionStrength");
         private static readonly int BackgroundColorId = Shader.PropertyToID("_RMQ_BackgroundColor");
+        private static readonly int ClipBackgroundId = Shader.PropertyToID("_ClipBackground");
 
         // Bounding-sphere radius of each kind's native mesh (see the matching
         // SDFs in RaymarchQuad.shader), indexed by PrimitiveKind.
@@ -247,6 +251,10 @@ namespace SkeletonMaker
             _block.SetFloat(ShadowStrengthId, shadowStrength);
             _block.SetFloat(OcclusionStrengthId, occlusionStrength);
             _block.SetColor(BackgroundColorId, backgroundColor);
+
+            var material = _renderer.sharedMaterial;
+            bool clip = clipBackground || (material != null && material.GetFloat(ClipBackgroundId) > 0.5f);
+            _block.SetFloat(ClipBackgroundId, clip ? 1f : 0f);
             _renderer.SetPropertyBlock(_block);
         }
 

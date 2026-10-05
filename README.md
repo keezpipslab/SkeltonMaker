@@ -71,13 +71,15 @@ listing it is current, and anything listed nowhere (XR rig, table, managers) is 
 - **Build** - everything else: the skeleton, the avatar stand-in, the raymarch quad, the smoothing
   knob, the color baths and the other ten table slots (a slot that's switched off hasn't spawned
   its shape yet, so the table fills up when Build begins).
-- **Math** - everything in Build, plus two more dials in a row beside the smoothing knob, built by
-  `SkeletonMaker > Add Math Stage` (run it after Add Stages). Each changes one thing about how the
+- **Math** - everything in Build, plus one more dial beside the smoothing knob, built by
+  `SkeletonMaker > Add Math Stage` (run it after Add Stages). It changes one thing about how the
   raymarch quad computes the surface, so only the raymarched view changes, not the meshes:
   - **Inflate** (`InflateKnob`, `RaymarchQuad.inflate`): `d - c`. The surface is wherever the
     distance is 0, so subtracting `c` everywhere moves it `c` meters outward - or inward below 0,
     where thin shapes disappear. 12 o'clock is 0; the dial runs from -0.15 to +0.15 m.
-  - **Repeat** (`RepeatKnob`, `RaymarchQuad.repeat`): `mod(p)`. Space is wrapped around every so
+  - **Repeat** (`RepeatKnob`, `RaymarchQuad.repeat`) - *not in the scene for now*: the menu builds
+    no dial for it and removes one that's there. The math is still in the shader and costs nothing
+    while `repeat` is 0 (set it in the Inspector to try it). `mod(p)`: space is wrapped around every so
     many meters across the floor, so the same shapes are met again in every cell, out to
     `repeatDistance` (20 m, fading into the background color). All the way down is off; turning it
     up brings the copies in from 4 m apart to 1.2 m. The cells are centred on the middle of
@@ -86,7 +88,7 @@ listing it is current, and anything listed nowhere (XR rig, table, managers) is 
     the dancer first. This is the expensive one on a Quest: every pixel of the quad inside the
     layer of copies is marched, not just those near a shape.
 
-  Both dials go back to neutral when the stage is left, so Build always shows the skeleton as built.
+  The dial goes back to neutral when the stage is left, so Build always shows the skeleton as built.
 
 **B** on the right controller (or Enter) is "next stage": out of the tutorial into Build, then back
 and forth between Build and Math. `StageController.Instance.Go(stage)` / `Next()` do it from code.
@@ -320,8 +322,8 @@ is the one the plugin uses. It is redone every frame, so it follows the rig if t
 
 Packages (added to `Packages/manifest.json`, with Meta's scoped registry `npm.developer.oculus.com`):
 `com.meta.xr.sdk.core` 207.0.0 and `com.meta.xr.sdk.movement` (git, pinned to the v207 commit). The
-project stays on Unity's OpenXR plugin + XRI's XR Origin - there is no `OVRCameraRig`/`OVRManager` in
-the scene. The Core SDK's **Meta XR Feature** (OpenXR feature) is what makes body tracking available
+project stays on Unity's OpenXR plugin + XRI's XR Origin - there is no `OVRCameraRig` in the scene
+(an `OVRManager` only came in with passthrough, see below). The Core SDK's **Meta XR Feature** (OpenXR feature) is what makes body tracking available
 to it, on Android (headset builds) and on Standalone (editor Play over Quest Link).
 
 **Editor Play over Link**: Link needs **Developer Runtime Features** on (Meta Quest Link app >
@@ -355,6 +357,43 @@ holds:
 the source's T-pose (the Animator's zero-muscle pose, or the tracked skeleton's bind pose) and is done
 in the body's own frame, so it holds whichever way the source happens to be facing.
 
+## Passthrough (the real room, and its camera)
+
+`SkeletonMaker > Add Passthrough` adds three objects and switches passthrough and passthrough camera
+access on in `Assets/Oculus/OculusProjectConfig.asset` (which puts `com.oculus.feature.PASSTHROUGH`
+and `horizonos.permission.HEADSET_CAMERA` in the Android manifest at build time). Package:
+`com.meta.xr.mrutilitykit` 207.0.0, for its `PassthroughCameraAccess`.
+
+Passthrough goes through Meta's Core SDK (the **Meta XR Feature** that body tracking already uses),
+not through Unity's *Meta Quest: Camera (Passthrough)* OpenXR feature, which stays off: Unity's
+route gives no camera pictures in the editor, and two owners of the passthrough layer is one too many.
+
+- **`OVR Manager`** (`OVRManager`, Enable Passthrough on, Tracking Origin **Stage**). Meta's
+  passthrough only runs with one in the scene. It also sets the tracking origin, which the XR Origin
+  follows: the floor, with recentering off.
+- **`Passthrough`** (`OVRPassthroughLayer` + `PassthroughView`). The room is shown in the stages
+  listed under **Stages Shown** (the tutorial); **T** flips it until the next stage change; and a
+  remote performer drawn on top of the real one holds it on (`PassthroughView.Require`). Showing the
+  room = the layer unhidden, the camera clearing to transparent instead of to the skybox (passthrough
+  is composited *under* the scene, so it shows wherever nothing opaque was drawn) and
+  `RaymarchQuad.clipBackground` on, so the quad draws only its shapes. If passthrough isn't running
+  the skybox simply stays.
+- **`Passthrough Camera`** (`PassthroughCameraAccess` + `PassthroughCameraFeed`). The left camera,
+  1280 x 960, running only between `Begin()` and `End()`. `TryGetFrame` gives the pixels (bottom row
+  first), focal length and principal point in pixels of that picture, the camera's pose in the scene
+  when it was taken, and the timestamp. Meta reports the pose in the headset's tracking space; it is
+  brought into the scene with `AvatarBodyTrackingSource.TryGetTrackingToWorld`, so it stays right
+  after `StageCalibrator` has moved the XR Origin. **V** shows the live picture on a small panel by
+  the table and logs resolution, lens numbers and pose once. Quest 3 / 3S only.
+
+This is a Link project: it is run from the editor over Link, not as a headset build.
+
+**Over Link** (editor Play): in the Link app, Settings > Developer (Settings > Beta in older
+versions), next to Developer Runtime Features, switch on **Passthrough over Meta Horizon Link** and
+**Passthrough Camera API permissions**, and restart Unity. Camera pictures need Link v85 or newer
+and a USB cable. Passthrough only shows in the headset - the Game view stays black where the room
+would be.
+
 ## Two performers on one stage (OSC)
 
 Two instances, each an editor on Link with its own headset, send each other their tracked body and
@@ -375,19 +414,23 @@ it, in meters, Unity's left-handed axes, Y up. Both PCs must have it at the same
 
 - **Stage Shift** is the safe offset. Each side draws the other moved by *(their shift - its own)*:
   (-1,0,0) on one PC and (1,0,0) on the other keeps the bodies 2 m further apart than the performers
-  really are, zero on both puts every skeleton on its real performer. The headset shows no
-  passthrough yet and Quest's legs are estimated, so don't go to zero in one room before it does.
+  really are, zero on both puts every skeleton on its real performer. Whenever a remote skeleton is
+  drawn less than 0.5 m from where its performer really stands, the real room is switched on and
+  held on (see Passthrough; only for performers coming from another PC, not for the fake peer, an
+  echo or a recording while Remote Host is this PC) - Quest's legs are estimated, so the skeleton is not where the feet are.
 - **Calibration** (`StageCalibrator`) lines the headset up with the real floor by moving the XR
   Origin, never the scene. Put two marks on the floor, **Mark Distance** apart: A is the stage
   origin, B is straight ahead of it. Press **C**, rest the right controller on A and pull the
   trigger (or Space), then the same on B; the controller buzzes each time. The console reports how
   far apart it measured the marks - both PCs should agree to within a couple of centimeters. The
   result is saved to `stage-calibration.json` under `Application.persistentDataPath` and put back on
-  the next start; it is flagged stale when the headset reports its tracking origin moved (a
-  recenter), and then needs doing again.
+  the next start; it is flagged stale when the headset reports its tracking origin moved, and then
+  needs doing again. With the `OVR Manager` that passthrough added, the tracking origin is Meta's
+  **Stage** (the floor, not moved by a recenter), so a recenter no longer does that.
 - `StageCalibrator.Calibrate(worldA, worldB)` is the entry point for the ArUco marker input that
-  will replace the controller once passthrough camera frames are in (markers lie flat on the floor,
-  so that input also sets **Use Mark Height**).
+  will replace the controller (markers lie flat on the floor, so that input also sets **Use Mark
+  Height**). The frames for it come from `PassthroughCameraFeed.TryGetFrame` (see Passthrough); the
+  detector itself is not written yet.
 
 ### Messages
 
