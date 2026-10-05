@@ -354,3 +354,84 @@ holds:
 `AvatarDanceSource` treats both sources identically: the rest-pose calibration described above uses
 the source's T-pose (the Animator's zero-muscle pose, or the tracked skeleton's bind pose) and is done
 in the body's own frame, so it holds whichever way the source happens to be facing.
+
+## Two performers on one stage (OSC)
+
+Two instances, each an editor on Link with its own headset, send each other their tracked body and
+the skeleton built on it, and show the other one as a line skeleton wearing ghosts of its primitives.
+`SkeletonMaker > Add Shared Stage` adds everything below; `SkeletonMaker > Check OSC Codec` writes
+and reads back a test message.
+
+**Setting up two PCs**: on the `Shared Stage` object's `OscLink`, give each PC its own
+**Performer Id** and the other PC's address as **Remote Host** (same port on both, UDP 9000 by
+default, which the firewall has to let in). Your body is sent while the avatar is in Tracking mode;
+the built skeleton is sent all the time.
+
+### The stage frame
+
+"Stage" here is the place, not the app's Tutorial/Build/Math phases. The `Stage Origin` object
+(`StageFrame`) marks the spot on the floor both performers agree on; every body is sent relative to
+it, in meters, Unity's left-handed axes, Y up. Both PCs must have it at the same place in the scene.
+
+- **Stage Shift** is the safe offset. Each side draws the other moved by *(their shift - its own)*:
+  (-1,0,0) on one PC and (1,0,0) on the other keeps the bodies 2 m further apart than the performers
+  really are, zero on both puts every skeleton on its real performer. The headset shows no
+  passthrough yet and Quest's legs are estimated, so don't go to zero in one room before it does.
+- **Calibration** (`StageCalibrator`) lines the headset up with the real floor by moving the XR
+  Origin, never the scene. Put two marks on the floor, **Mark Distance** apart: A is the stage
+  origin, B is straight ahead of it. Press **C**, rest the right controller on A and pull the
+  trigger (or Space), then the same on B; the controller buzzes each time. The console reports how
+  far apart it measured the marks - both PCs should agree to within a couple of centimeters. The
+  result is saved to `stage-calibration.json` under `Application.persistentDataPath` and put back on
+  the next start; it is flagged stale when the headset reports its tracking origin moved (a
+  recenter), and then needs doing again.
+- `StageCalibrator.Calibrate(worldA, worldB)` is the entry point for the ArUco marker input that
+  will replace the controller once passthrough camera frames are in (markers lie flat on the floor,
+  so that input also sets **Use Mark Height**).
+
+### Messages
+
+All to `/skm/<performer id>/...`, one UDP datagram each, nothing acknowledged: state is simply
+repeated, so a late or lossy peer is up to date within a second.
+
+| Address | Arguments | Sent |
+|---|---|---|
+| `pose` | int sequence, then 21 joints x (float px py pz, qx qy qz qw), stage frame | every frame |
+| `rest` | int version, then 21 joints x 7 floats: the T-pose, in the sender's own space | every second, and when it changes |
+| `state` | int revision, int element count, float smoothing, float shift x y z, int calibrated | every second, and when it changes |
+| `elem` | int revision, int index, string kind, string anchor, float size xyz, local position xyz, local rotation xyzw, int painted, float rgba | all of them every second, and when one changes |
+
+Joint order (`OscBody.Joints`, `HumanBodyBones` names, anatomical left/right): Hips, Spine, Chest,
+Neck, Head, Left Shoulder / UpperArm / LowerArm / Hand, the same four on the right, Left UpperLeg /
+LowerLeg / Foot / Toes, the same four on the right. A joint a body lacks has NaN as its position.
+An `elem` is one `SkeletonComposition.Element`; a skeleton is complete once `element count`
+elements of the `state`'s revision have arrived.
+
+### Scripts (`Scripts/Net`, plus `StageFrame` and `StageCalibrator`)
+
+- `OscCodec` - `OscWriter` / `OscMessage`: int, float and string arguments, bundles read.
+- `OscLink` - the UDP socket; `Received` hands messages out on the main thread. Has a simulated
+  **Delay / Jitter / Loss** for what comes in.
+- `BodySender` / `BodyPublisher` - the local body and skeleton, out.
+- `BodyReceiver` / `RemoteSkeleton` / `NetworkPoseSource` - one remote skeleton per performer id,
+  made on the first message and removed after 5 s of silence; hidden when no pose has arrived for 1 s.
+  Its ghosts come from `AvatarDuplicateManager.BuildGhost` and it is added to the Raymarch Quad's
+  sources (the 64 shapes are shared with everything else; the console warns when they run out).
+- `AvatarDriver` - the calibrate-and-pose part that used to live in `AvatarDanceSource`, now shared
+  by the stand-in and every remote skeleton.
+- `BodyRecorder` (R) / `BodyPlayer` (P) - record what is sent (or received) to `body-recording.oscrec`
+  and play it back in as performer 10 (further recorded performers as 11, 12, ...), looping.
+- `FakePeer` - sends the dance as performer 2, wearing the local skeleton.
+
+### Testing with one PC
+
+Leave **Remote Host** on 127.0.0.1 so everything sent comes straight back in.
+
+1. **Fake peer**: switch on `Shared Stage > Fake Peer`. A second skeleton dances at its Stage
+   Position; no body tracking needed.
+2. **Meet yourself**: tick **Accept Own Id** on the `OscLink` and go to Tracking mode. Your own body
+   comes back as a remote skeleton, moved by the `BodyReceiver`'s **Echo Shift**. Give the link a
+   **Delay** of a few seconds and it follows you around.
+3. **Record and replay**: R while tracking, R again to stop, P to dance with the recording.
+4. **A second PC without a headset** can run the same scene with the fake peer or a recording and
+   its Remote Host set to the first PC, to try the real network.

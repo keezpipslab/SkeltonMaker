@@ -162,6 +162,16 @@ namespace SkeletonMaker
             if (index >= 0 && index < sources.Count) sources[index].visible = !sources[index].visible;
         }
 
+        /// <summary>Adds a skeleton that only exists at runtime (a remote performer's).</summary>
+        public void AddSource(string label, Transform root, Color color)
+        {
+            foreach (var source in sources)
+                if (source != null && source.root == root) return;
+            sources.Add(new ShapeSource { label = label, root = root, color = color });
+        }
+
+        public void RemoveSource(Transform root) => sources.RemoveAll(source => source != null && source.root == root);
+
         /// <summary>Flips Show Table and every source marked Include In Context Toggle together, as one on/off group.</summary>
         public void ToggleContext()
         {
@@ -197,6 +207,8 @@ namespace SkeletonMaker
             if (_renderer == null) return;
 
             int count = GatherShapes(out Vector4 sceneBounds);
+            if (count >= MaxShapes && ShapeCount < MaxShapes)
+                Debug.LogWarning($"RaymarchQuad: all {MaxShapes} shape slots are in use, anything beyond that is not drawn.", this);
             ShapeCount = count;
 
             // Unused slots: identity + a far-away zero-radius bound, never reached

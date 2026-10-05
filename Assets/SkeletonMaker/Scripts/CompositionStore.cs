@@ -147,7 +147,7 @@ namespace SkeletonMaker
             Debug.Log($"CompositionStore: loaded {built} of {composition.elements.Count} element(s) from {FilePath}");
         }
 
-        private bool TryGetPrefab(PrimitiveKind kind, out GameObject prefab)
+        public bool TryGetPrefab(PrimitiveKind kind, out GameObject prefab)
         {
             if (prefabsByKind == null)
             {
