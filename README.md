@@ -41,18 +41,81 @@ Open scene: `Assets/SkeletonMaker/Scenes/SkeletonBuilder.unity`
 - **Release far away**: the element waits 4s (grace period to re-grab it), then teleports back to
   its home slot on the table (the same instance - re-grabbing during the 4s cancels this).
 
-## Exporting a composition
+## Stages (tutorial, build, math)
 
-`SkeletonMaker > Export Composition...` (Editor menu, not an in-VR control) writes every primitive
-currently placed on the main skeleton to a JSON file you choose the location for - each one's
-`kind`, `size`, which `Bone_`/`Joint_` anchor it's parented under, and its local position/rotation
-offset from that anchor (the same offset `AvatarDuplicateManager` already relies on to mirror a
-duplicate correctly, so it's enough to reconstruct the composition later or feed it to another
-tool - `RaymarchableElement` already exposes `Kind` + `Size` as exactly the data a future SDF
-material would need). Only placed elements are included - not anything still on the table,
-currently held, or a stand-in avatar duplicate. `CompositionExporter.BuildCompositionJson()` is the
-actual gathering logic, kept separate from the (blocking, interactive) save dialog so it stays
-testable/scriptable on its own.
+The scene is one Unity scene split into stages by `StageController` (on the `Stages` object), which
+switches whole objects on and off: an object listed under a stage is active only while a stage
+listing it is current, and anything listed nowhere (XR rig, table, managers) is always there.
+`SkeletonMaker > Add Stages` (Editor menu, once per scene) adds it and sorts the scene:
+
+- **Tutorial** - starts as the table with only the Sphere and Box slots, and the `Tutorial Guide`
+  text above it. `TutorialGuide` walks through seven steps and moves on as soon as each has actually
+  been done, switching each new thing on when its step starts:
+  1. pick a shape up;
+  2. scale it (left stick up/down);
+  3. reshape it (the other three stick axes; it's changing the width that counts);
+  4. color it - the color baths appear;
+  5. place it - the `Practice Stick` appears where the skeleton's spine will be: a `SkeletonRig`
+     with **Stick** ticked, i.e. one upright bone and no joints, so previewing and placing work
+     exactly as on the skeleton (nothing placed on it is copied to the avatar);
+  6. look at it through the raymarch quad, which appears now - done once a second shape is on the
+     stick, so the two can be seen merging;
+  7. pick the quad up with the left grip - done once it's in the hand (or has moved 5cm).
+
+  The guide only watches outcomes (what's in a hand, its `Size` and color, how many shapes are on
+  the stick) and never talks to the baths or the quad - it just switches on whatever objects are
+  listed for a step - so those can be restyled without touching it. The one link to the quad is a
+  "Tutorial stick" entry the menu adds to its **Sources**, without which shapes on the stick
+  wouldn't be drawn. **B** on the right controller (or Enter) skips the tutorial. The stick and
+  everything on it disappear when Build begins.
+- **Build** - everything else: the skeleton, the avatar stand-in, the raymarch quad, the smoothing
+  knob, the color baths and the other ten table slots (a slot that's switched off hasn't spawned
+  its shape yet, so the table fills up when Build begins).
+- **Math** - everything in Build, plus two more dials in a row beside the smoothing knob, built by
+  `SkeletonMaker > Add Math Stage` (run it after Add Stages). Each changes one thing about how the
+  raymarch quad computes the surface, so only the raymarched view changes, not the meshes:
+  - **Inflate** (`InflateKnob`, `RaymarchQuad.inflate`): `d - c`. The surface is wherever the
+    distance is 0, so subtracting `c` everywhere moves it `c` meters outward - or inward below 0,
+    where thin shapes disappear. 12 o'clock is 0; the dial runs from -0.15 to +0.15 m.
+  - **Repeat** (`RepeatKnob`, `RaymarchQuad.repeat`): `mod(p)`. Space is wrapped around every so
+    many meters across the floor, so the same shapes are met again in every cell, out to
+    `repeatDistance` (20 m, fading into the background color). All the way down is off; turning it
+    up brings the copies in from 4 m apart to 1.2 m. The cells are centred on the middle of
+    everything the quad shows, and whatever sticks out of a cell is cut off at its edge - so with
+    the table, main skeleton and dancer all showing, use the left **X** button to declutter down to
+    the dancer first. This is the expensive one on a Quest: every pixel of the quad inside the
+    layer of copies is marched, not just those near a shape.
+
+  Both dials go back to neutral when the stage is left, so Build always shows the skeleton as built.
+
+**B** on the right controller (or Enter) is "next stage": out of the tutorial into Build, then back
+and forth between Build and Math. `StageController.Instance.Go(stage)` / `Next()` do it from code.
+Set **Start Stage** to Build on the `Stages` object to skip the tutorial while working on the
+builder. Run Add Stages again after adding something to the scene the tutorial shouldn't show (or
+edit the lists by hand).
+
+## Saving and loading a skeleton
+
+`SkeletonComposition` is one skeleton's configuration as plain data: every primitive placed on the
+main skeleton - its `kind`, `size`, color (`painted` + `color`; unpainted elements keep their
+material's color), which `Bone_`/`Joint_` anchor it's parented under, and its local
+position/rotation offset from that anchor (the same offset `AvatarDuplicateManager` relies on to
+mirror a duplicate correctly) - plus the `smoothing` it was built with and a format `version`. Only
+placed elements are included - not anything still on the table, currently held, or a stand-in
+avatar duplicate.
+
+- **At runtime**: `SkeletonMaker > Add Composition Store` (Editor menu, once per scene) adds a
+  `Composition Store` object wired to every element prefab and the Raymarch Quad. **F5** saves,
+  **F9** loads; `CompositionStore.Instance.Save()` / `Load()` do the same from code. The file is
+  `<slot>.json` (slot `skeleton` by default) under `Application.persistentDataPath`. Loading
+  replaces whatever is placed on the skeleton (and its copies on the stand-in) and restores the
+  smoothing; elements on the table or in a hand are left alone. Loaded elements behave like any
+  placed one - grab, resize, re-place, recolor - but mirror pairs come back as two independent
+  elements.
+- **From the editor**: `SkeletonMaker > Export Composition...` writes the same JSON to a file you
+  choose the location for. `CompositionExporter.BuildCompositionJson()` is the gathering logic,
+  kept separate from the (blocking, interactive) save dialog so it stays testable/scriptable on its
+  own.
 
 ## Script architecture (`Assets/SkeletonMaker/Scripts`)
 
@@ -98,16 +161,17 @@ testable/scriptable on its own.
   priority over a bone segment (`PlaceOnJoint` vs `PlaceOnSkeleton`) - either way it parents under
   the resolved anchor (not the rig root) and triggers `AvatarDuplicateManager`.
 - `TableSpawnPoint` - one table slot; spawns a replacement when notified.
-- `AvatarBodyTarget` - placeholder joint-name -> Transform map for the player's own avatar body,
-  meant to eventually sit on whatever Meta's Movement SDK (Body Tracking) drives. Its joint slot
-  names are auto-populated from `SkeletonRig.JointNames` so they can never drift out of sync. Every
-  slot's transform is null until the Movement SDK is installed and its bone transforms are mapped
-  in (e.g. by an adapter reading `OVRSkeleton.BoneId` and assigning by name) - until then this is
-  inert plumbing.
+- `SkeletonComposition` / `CompositionStore` - the saved-skeleton data and the runtime save/load of
+  it (see above). Loading goes through `SkeletonRig.TryFindAnchor` and
+  `SkeletonPlacement.PlaceLoaded`, so a loaded element ends up in the same state as a hand-placed one.
+- `AvatarBodyTarget` - joint-name -> Transform map for the avatar body that placed primitives get
+  duplicated onto. Its joint slot names are auto-populated from `SkeletonRig.JointNames` so they can
+  never drift out of sync; in the scene the slots point at the stand-in's `Bone_`/`Joint_` children.
+- `AvatarDanceSource` - poses the stand-in each frame from the current `AvatarMode`'s source (still
+  A-pose, dance Animator, or tracked body); `AvatarBodyTrackingSource` is the tracked-body source.
 - `AvatarDuplicateManager` - on each placement, mirrors a transparent, non-interactive duplicate of
   the placed element onto the matching `AvatarBodyTarget` joint (see below). No-ops safely - no
-  `AvatarBodyTarget` in the scene, or that joint's slot unassigned - which is the expected state
-  until a real avatar is wired in.
+  `AvatarBodyTarget` in the scene, or that joint's slot unassigned.
 
 ## Raymarched view (Raymarch Quad)
 
@@ -138,9 +202,13 @@ quad path, but primitives-only and rewritten to this project's conventions.
   with every source whose **Include In Context Toggle** is ticked (the menu ticks it for the main
   skeleton) - one press declutters down to just the dancer, another press brings the table and
   reference pose back.
-- The left thumbstick's vertical axis raises/lowers **Smoothing** over time (push up to blend shapes
-  together more, down towards a hard union) - the same held-stick-changes-a-value-over-time technique
-  `HeldElementScaler` uses for resizing, just driving the quad's blend radius instead of an element's size.
+- **Smoothing** is set with the **Smoothing Knob** (`SmoothingKnob`, a `Knob` like the math stage's dials, built by `SkeletonMaker > Add Smoothing Knob`):
+  a small disk with a gold indicator sphere floating left of the table, with the value in a text above it.
+  Squeeze either hand's grip while that hand is at the disk and twist your wrist about the disk's axis like
+  turning a real knob - the disk never moves, only the indicator turns (clockwise = more blending, 270 degrees
+  of travel for 0 to 0.3 m). Twist is read from the controller's rotation (swing-twist about the knob's
+  axis), so it works however you hold the controller. Move/rotate the `Smoothing Knob` object to relocate it
+  (its up axis points at the viewer, forward is 12 o'clock). The thumbsticks are left to `HeldElementScaler`.
 - Shape kind: the parent's `RaymarchShape` (stand-in duplicates - `AvatarDuplicateManager` now adds
   one, since it strips `RaymarchableElement`), else its `RaymarchableElement` (main skeleton), else
   parsed from the mesh name (covers duplicates made before `RaymarchShape` existed).
@@ -158,36 +226,23 @@ quad path, but primitives-only and rewritten to this project's conventions.
 
 ## Avatar / Meta Body package
 
-The player's own visible body is expected to use Meta's **Movement SDK** (Body Tracking) for a
-humanoid avatar. That package isn't in Unity's package registry - install it from the Asset Store
-or Meta's own scoped registry (`Movement` / `Meta XR All-in-One SDK`) when you're ready to add the
-avatar. It wasn't installed here to keep the project buildable without an external download.
+The stand-in avatar can follow the player's own body through Meta's **Movement SDK** (body
+tracking) - see "Tracking mode" below. Grabbing is independent of it: it reads the standard XRI
+controller transforms (`Left Controller` / `Right Controller` under `XR Origin (XR Rig)/Camera
+Offset`). The sample's hand-tracking, poke/near-far interactors, and locomotion (teleport/move/turn)
+were disabled in the scene since this app doesn't need them, and a live thumbstick otherwise doubles
+as "walk around" input, which would fight the resize controls. Switching the Teleport Interactor
+objects off isn't enough on its own: XRI's `ControllerInputActionManager` switches them back on
+whenever a thumbstick is pushed forward (the red arc). `SkeletonMaker > Remove Teleport` unhooks the
+manager from the teleport interactor and its two actions on both controllers.
 
-Nothing in this project depends on it: grabbing reads the standard XRI controller transforms
-(`Left Controller` / `Right Controller` under `XR Origin (XR Rig)/Camera Offset`), which stays
-correct regardless of which avatar/body solution is driving the player's visible hands. The
-sample's hand-tracking, poke/near-far interactors, and locomotion (teleport/move/turn) were
-disabled in the scene since this app doesn't need them - the player is expected to stand still at
-the table - and a live thumbstick otherwise doubles as "walk around" input, which would fight the
-resize controls.
-
-The "duplicate each placed primitive onto the player's own body" feature is already wired up (see
-`AvatarBodyTarget`/`AvatarDuplicateManager` above) and just needs the Movement SDK's actual bone
-transforms plugged in once it's installed. Remaining step: write a small adapter that reads the
-Movement SDK's body-tracking bone transforms (e.g. `OVRSkeleton`'s bones, matched by
-`OVRSkeleton.BoneId`) and assigns them into `AvatarBodyTarget`'s joint slots by name every frame (or
-once, if the avatar rig is itself driven by an Animator). Everything downstream - spawning a
-transparent, non-interactive duplicate at the matching joint whenever a primitive is placed -
-already works without further changes.
-
-**Until then**, the scene has a visible `Avatar Stand-In (Preview)` GameObject - a second copy of
+The scene has a visible `Avatar Stand-In (Preview)` GameObject - a second copy of
 the line-skeleton visual (both its bone segments and its 12 hinge-joint anchors) standing a couple
 meters beside the table - so the duplicate feature can actually be seen working today.
 `AvatarBodyTarget (Placeholder)`'s joint slots are wired to this stand-in's matching bones/joints
 (by name), so placing a primitive on the real skeleton - on a bone or right at a hinge joint -
-mirrors a faint transparent copy onto the corresponding spot on the stand-in. This is still **not**
-real body tracking (nothing here reads the player's actual body), but the stand-in isn't frozen
-either: `Assets/Animations/Dancing.fbx` (a Mixamo mocap clip, Humanoid, bone-only/no mesh so it's
+mirrors a faint transparent copy onto the corresponding spot on the stand-in. The stand-in isn't
+frozen: `Assets/Animations/Dancing.fbx` (a Mixamo mocap clip, Humanoid, bone-only/no mesh so it's
 naturally invisible) plays on a loop via a small hidden "Dance Motion Source" child (its own
 Animator + `Assets/Animations/DancingLoop.controller`), and `AvatarDanceSource` reads that Animator's
 live Humanoid bone transforms every `LateUpdate` to reposition *and reorient* the stand-in's
@@ -226,14 +281,65 @@ direction to 0.0 degrees at different moments of the dance, and the stand-in's l
 the main skeleton's. Torso joints that touch several bones use one of them as reference, so they are
 only approximate.
 
-**Dancing vs. a pose**: either controller's trigger (XRI's "Activate" action - unused elsewhere in
-this project, since only grip and the thumbsticks are already taken) toggles the stand-in between
-dancing and standing still in the frozen A-pose. When not dancing, `AvatarDanceSource` copies the
-main `SkeletonRig`'s own `Bone_`/`Joint_` local transforms straight onto the stand-in's matching
-children every frame instead of reading the dance Animator - the main rig's pose never changes, so
-it's always the correct, authoritative "standing still" reference rather than a separately cached
-snapshot that could go stale. `AvatarDanceSource.isDancing` is also just a plain serialized bool, so
-it can be flipped directly in the Inspector at runtime for quick testing without touching a
-controller at all.
-When the Movement SDK is installed, repoint `AvatarBodyTarget`'s joint slots at the real tracked
-bones (or just delete the stand-in and its wiring) to switch over to the real thing.
+**Still / Animation / Tracking**: either controller's trigger (XRI's "Activate" action - unused
+elsewhere in this project, since only grip and the thumbsticks are already taken) steps the stand-in
+through three modes (`AvatarMode`, `AvatarDanceSource.Mode`):
+
+- **Still** - the frozen A-pose. `AvatarDanceSource` copies the main `SkeletonRig`'s own
+  `Bone_`/`Joint_` local transforms straight onto the stand-in's matching children every frame - the
+  main rig's pose never changes, so it's always the correct, authoritative "standing still" reference
+  rather than a separately cached snapshot that could go stale.
+- **Animation** - the dance, as described above.
+- **Tracking** - the player's own body, from Meta's Movement SDK (see below).
+
+Whenever a mode starts, the avatar is put where the still avatar stands: the source's hips are moved
+over the still pose's hips once, and that offset is then kept, so from there on the avatar moves
+freely, exactly as its source does (the dance's root motion, the player walking around). The dance
+keeps its own heading and height. The tracked body is additionally turned to face the way the still
+avatar faces and stood on the stand-in's floor (whichever foot is lowest at that moment counts as on
+the ground), because the player is somewhere else, facing anywhere, in a tracking space whose floor
+needn't be the scene's. If the mode's source has nothing to show yet (body tracking still starting,
+permission not granted, no headset), the avatar stays in the still pose until it does; if tracking
+drops out later, it holds its last pose.
+
+`AvatarDanceSource.mode` is a plain serialized enum, so it can also be set directly in the Inspector
+at runtime for quick testing without touching a controller.
+
+### Tracking mode (Meta Movement SDK)
+
+Packages (added to `Packages/manifest.json`, with Meta's scoped registry `npm.developer.oculus.com`):
+`com.meta.xr.sdk.core` 207.0.0 and `com.meta.xr.sdk.movement` (git, pinned to the v207 commit). The
+project stays on Unity's OpenXR plugin + XRI's XR Origin - there is no `OVRCameraRig`/`OVRManager` in
+the scene. The Core SDK's **Meta XR Feature** (OpenXR feature) is what makes body tracking available
+to it, on Android (headset builds) and on Standalone (editor Play over Quest Link).
+
+**Editor Play over Link**: Link needs **Developer Runtime Features** on (Meta Quest Link app >
+Settings > Beta) and must be fully up - headset on, inside the Link home - *before* pressing Play.
+The Meta plugin blocks the editor while it waits for a Link session that is only half connected
+(once for several minutes, ending in a failed XR session). `SkeletonMaker > Body Tracking In Editor
+(Link)` toggles the feature for Standalone: untick it to take the Meta plugin out of editor Play
+when Link is misbehaving (Tracking mode then just shows the still pose in the editor).
+
+Project settings that matter:
+
+- `Assets/Oculus/OculusProjectConfig.asset`: **Body Tracking Support = Supported** - adds the
+  `com.oculus.permission.BODY_TRACKING` permission and feature to the Android manifest at build time.
+- `Assets/Resources/OculusRuntimeSettings.asset`: **Body Tracking Joint Set = Full Body** (legs are
+  needed) and **Fidelity = High**.
+
+Scene: `SkeletonMaker > Add Body Tracking Source` adds a `Body Tracking Source` object and wires it
+into `AvatarDanceSource.bodySource` (Tracking mode is skipped by the trigger while that is empty). It
+holds:
+
+- `MetaSourceDataProvider` (Movement SDK; an `OVRBody`) - kept disabled until Tracking mode starts.
+- `AvatarBodyTrackingSource` - enables it on `Begin()` (asking for the body tracking permission first
+  if needed) and disables it again on `End()`, and exposes the tracked joints and the provider's
+  T-pose by `HumanBodyBones` name (`IAvatarPoseSource`, the same interface the dance Animator is read
+  through). It reads the provider's raw tracking-space joints rather than
+  `MetaSourceDataProvider.GetSkeletonPose()`, which insists on an `OVRCameraRig` for its tracking
+  space; the tracking space doesn't matter here anyway, since the avatar is placed on the stand-in as
+  described above.
+
+`AvatarDanceSource` treats both sources identically: the rest-pose calibration described above uses
+the source's T-pose (the Animator's zero-muscle pose, or the tracked skeleton's bind pose) and is done
+in the body's own frame, so it holds whichever way the source happens to be facing.

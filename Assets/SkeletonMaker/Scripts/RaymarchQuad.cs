@@ -60,12 +60,6 @@ namespace SkeletonMaker
         [Tooltip("Left controller button that calls ToggleContext() - hides/shows Show Table plus every source marked Include In Context Toggle (e.g. the static main skeleton), so you can declutter down to just the dancer.")]
         [SerializeField] private InputActionReference contextToggleAction;
 
-        [Header("Left Thumbstick - Smoothing")]
-        [Tooltip("Left thumbstick's vertical axis raises/lowers Smoothing over time (push up to smooth more, down to sharpen towards a hard union).")]
-        [SerializeField] private InputActionReference smoothingThumbstick;
-        [SerializeField] private float smoothingAdjustSpeed = 0.15f; // smoothing units/sec at full deflection
-        [SerializeField] private float smoothingDeadzone = 0.15f;
-
         [Header("Quality")]
         [Range(8, 128)]
         [Tooltip("Max sphere-tracing steps per ray. Lower = cheaper, but grazing edges and thin gaps may break up.")]
@@ -73,9 +67,23 @@ namespace SkeletonMaker
 
         [Header("Look")]
         [Range(0f, 0.3f)]
-        [Tooltip("Blend radius between shapes (meters). 0 = hard union.")]
+        [Tooltip("Blend radius between shapes (meters). 0 = hard union. Driven at runtime by the SmoothingKnob.")]
         public float smoothing = 0.03f;
 
+        [Header("Math")]
+        [Range(-0.15f, 0.15f)]
+        [Tooltip("Subtracted from the distance to the surface everywhere (meters): above 0 the whole surface moves outward, below 0 inward. Driven at runtime by the InflateKnob.")]
+        public float inflate;
+
+        [Min(0f)]
+        [Tooltip("Wraps space around every this many meters across the floor, so everything shows up again and again. 0 = off. Anything further than half of this from the middle of the shapes gets cut off. Driven at runtime by the RepeatKnob.")]
+        public float repeat;
+
+        [Min(1f)]
+        [Tooltip("How far away (meters) the repeated copies are still drawn; they fade into the background toward it. Lower = cheaper.")]
+        public float repeatDistance = 20f;
+
+        [Header("Light")]
         [Tooltip("Light direction/color source. Falls back to RenderSettings.sun, then to a fixed overhead direction.")]
         public Light sun;
         public Color lightColor = Color.white;
@@ -105,7 +113,10 @@ namespace SkeletonMaker
         private static readonly int SceneBoundsId = Shader.PropertyToID("_RMQ_SceneBounds");
         private static readonly int MaxStepsId = Shader.PropertyToID("_RMQ_MaxSteps");
         private static readonly int SmoothingId = Shader.PropertyToID("_RMQ_Smoothing");
-        private static readonly int LightDirId = Shader.PropertyToID("_RMQ_LightDir");
+        private static readonly int InflateId = Shader.PropertyToID("_RMQ_Inflate");
+        private static readonly int RepeatId = Shader.PropertyToID("_RMQ_Repeat");
+        private static readonly int RepeatDistanceId = Shader.PropertyToID("_RMQ_RepeatDistance");
+        private static readonly int LightDirId =Shader.PropertyToID("_RMQ_LightDir");
         private static readonly int LightColorId = Shader.PropertyToID("_RMQ_LightColor");
         private static readonly int AmbientId = Shader.PropertyToID("_RMQ_Ambient");
         private static readonly int SpecularId = Shader.PropertyToID("_RMQ_Specular");
@@ -171,7 +182,6 @@ namespace SkeletonMaker
                 contextToggleAction.action.Enable();
                 contextToggleAction.action.performed += OnContextTogglePerformed;
             }
-            if (smoothingThumbstick != null) smoothingThumbstick.action.Enable();
         }
 
         private void OnDisable()
@@ -181,14 +191,6 @@ namespace SkeletonMaker
         }
 
         private void OnContextTogglePerformed(InputAction.CallbackContext ctx) => ToggleContext();
-
-        private void Update()
-        {
-            if (smoothingThumbstick == null) return;
-            float y = smoothingThumbstick.action.ReadValue<Vector2>().y;
-            if (Mathf.Abs(y) < smoothingDeadzone) return;
-            smoothing = Mathf.Clamp(smoothing + y * smoothingAdjustSpeed * Time.deltaTime, 0f, 0.3f);
-        }
 
         private void OnBeginContextRendering(ScriptableRenderContext context, List<Camera> cameras)
         {
@@ -217,6 +219,9 @@ namespace SkeletonMaker
 
             _block.SetInteger(MaxStepsId, maxSteps);
             _block.SetFloat(SmoothingId, smoothing);
+            _block.SetFloat(InflateId, inflate);
+            _block.SetFloat(RepeatId, repeat);
+            _block.SetFloat(RepeatDistanceId, repeatDistance);
 
             Light light = sun != null ? sun : RenderSettings.sun;
             Vector3 toLight = light != null ? -light.transform.forward : new Vector3(0.3f, 1f, -0.4f).normalized;
@@ -241,6 +246,7 @@ namespace SkeletonMaker
             foreach (var source in sources)
             {
                 if (source == null || !source.visible || source.root == null) continue;
+                if (!source.root.gameObject.activeInHierarchy) continue; // a switched-off source (e.g. another stage's) shows nothing
                 source.root.GetComponentsInChildren(false, _filters);
                 foreach (var filter in _filters)
                     TryAddShape(filter, source.color, ref count, ref min, ref max);
@@ -290,7 +296,7 @@ namespace SkeletonMaker
                 Vector3 c = _bounds[i];
                 sceneRadius = Mathf.Max(sceneRadius, Vector3.Distance(c, sceneCenter) + _bounds[i].w);
             }
-            sceneBounds = new Vector4(sceneCenter.x, sceneCenter.y, sceneCenter.z, sceneRadius + smoothing);
+            sceneBounds = new Vector4(sceneCenter.x, sceneCenter.y, sceneCenter.z, sceneRadius + smoothing + Mathf.Max(inflate, 0f));
             return count;
         }
 

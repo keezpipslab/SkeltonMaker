@@ -28,6 +28,13 @@ namespace SkeletonMaker
         [SerializeField] private Color nearColor = Color.yellow;
         [SerializeField] private Color placeableColor = Color.green;
 
+        [Tooltip("A single upright bone instead of the whole body: the tutorial's practice stick. Nothing placed on it is copied to the avatar.")]
+        [SerializeField] private bool stick;
+        [SerializeField] private float stickLength = 0.5f;
+
+        /// <summary>True for the tutorial's one-bone practice stick.</summary>
+        public bool IsStick => stick;
+
         private static readonly Dictionary<string, Vector3> Joints = new Dictionary<string, Vector3>
         {
             { "Hips", new Vector3(0f, 0.95f, 0f) },
@@ -87,6 +94,21 @@ namespace SkeletonMaker
             ("Hips", "RightUpperLeg"), ("RightUpperLeg", "RightLowerLeg"), ("RightLowerLeg", "RightFoot"), ("RightFoot", "RightToes"),
         };
 
+        // The stick's own layout: one bone, no hinges. Its joint names are
+        // deliberately not body joints, so AvatarBodyTarget has no slot for them.
+        private static readonly (string from, string to)[] StickBones = { ("Stick", "StickTop") };
+        private static readonly string[] NoHingeJoints = { };
+
+        // Whichever layout this rig was last built with (see Build).
+        private (string from, string to)[] bones = Bones;
+        private string[] hingeJointNames = HingeJointNames;
+
+        private Vector3 JointPosition(string jointName)
+        {
+            if (!stick) return Joints[jointName];
+            return jointName == "StickTop" ? Vector3.up * stickLength : Vector3.zero;
+        }
+
         private readonly List<(Vector3 a, Vector3 b)> boneSegmentsLocal = new List<(Vector3, Vector3)>();
         private readonly List<LineRenderer> boneLineRenderers = new List<LineRenderer>();
 
@@ -124,11 +146,11 @@ namespace SkeletonMaker
         /// the spine/neck ones down the middle).</summary>
         public int MirrorBoneIndex(int index)
         {
-            if (index < 0 || index >= Bones.Length) return -1;
-            string from = MirrorName(Bones[index].from), to = MirrorName(Bones[index].to);
-            for (int i = 0; i < Bones.Length; i++)
+            if (index < 0 || index >= bones.Length) return -1;
+            string from = MirrorName(bones[index].from), to = MirrorName(bones[index].to);
+            for (int i = 0; i < bones.Length; i++)
             {
-                if (Bones[i].from == from && Bones[i].to == to) return i;
+                if (bones[i].from == from && bones[i].to == to) return i;
             }
             return -1;
         }
@@ -136,8 +158,8 @@ namespace SkeletonMaker
         /// <summary>The same hinge joint on the opposite side of the body.</summary>
         public int MirrorHingeJointIndex(int index)
         {
-            if (index < 0 || index >= HingeJointNames.Length) return -1;
-            return System.Array.IndexOf(HingeJointNames, MirrorName(HingeJointNames[index]));
+            if (index < 0 || index >= hingeJointNames.Length) return -1;
+            return System.Array.IndexOf(hingeJointNames, MirrorName(hingeJointNames[index]));
         }
 
         /// <summary>Reflects a world-space pose through the rig's left/right
@@ -151,13 +173,16 @@ namespace SkeletonMaker
             mirroredRotation = transform.rotation * new Quaternion(q.x, -q.y, -q.z, q.w);
         }
 
-        private void Awake()
+        private void Awake() => Build();
+
+        // Instance is whichever rig is switched on, so nothing can be placed
+        // on one that isn't there; the real skeleton wins over the stick.
+        private void OnEnable()
         {
-            Instance = this;
-            Build();
+            if (Instance == null || !stick) Instance = this;
         }
 
-        private void OnDestroy()
+        private void OnDisable()
         {
             if (Instance == this) Instance = null;
         }
@@ -211,10 +236,13 @@ namespace SkeletonMaker
             hingeJointIncidentBones.Clear();
             highlightedBoneIndices.Clear(); // the old bone GameObjects it referred to are gone
 
-            foreach (var bone in Bones)
+            bones = stick ? StickBones : Bones;
+            hingeJointNames = stick ? NoHingeJoints : HingeJointNames;
+
+            foreach (var bone in bones)
             {
-                Vector3 a = Joints[bone.from];
-                Vector3 b = Joints[bone.to];
+                Vector3 a = JointPosition(bone.from);
+                Vector3 b = JointPosition(bone.to);
                 boneSegmentsLocal.Add((a, b));
 
                 var go = new GameObject($"Bone_{bone.from}_{bone.to}");
@@ -246,17 +274,17 @@ namespace SkeletonMaker
                 boneLineRenderers.Add(lr);
             }
 
-            foreach (var jointName in HingeJointNames)
+            foreach (var jointName in hingeJointNames)
             {
                 var go = new GameObject($"Joint_{jointName}");
                 go.transform.SetParent(transform, false);
-                go.transform.localPosition = Joints[jointName];
+                go.transform.localPosition = JointPosition(jointName);
                 hingeJointAnchors.Add(go.transform);
 
                 var incident = new List<int>(2);
-                for (int i = 0; i < Bones.Length; i++)
+                for (int i = 0; i < bones.Length; i++)
                 {
-                    if (Bones[i].from == jointName || Bones[i].to == jointName) incident.Add(i);
+                    if (bones[i].from == jointName || bones[i].to == jointName) incident.Add(i);
                 }
                 hingeJointIncidentBones.Add(incident.ToArray());
             }
@@ -301,7 +329,7 @@ namespace SkeletonMaker
         /// proximal end is named after - e.g. the "LeftShoulder"-to-"LeftUpperArm"
         /// segment is named for its proximal joint, "LeftShoulder".</summary>
         public string BoneJointName(int index) =>
-            index >= 0 && index < Bones.Length ? Bones[index].from : null;
+            index >= 0 && index < bones.Length ? bones[index].from : null;
 
         /// <summary>Index (into the hinge-joint list, HingeJointNames order) of the
         /// hinge joint - shoulder/elbow/wrist/hip/knee/ankle - nearest worldPoint,
@@ -334,7 +362,60 @@ namespace SkeletonMaker
         /// <summary>The joint name (matching AvatarBodyTarget's slots) for this
         /// hinge joint index.</summary>
         public string HingeJointName(int index) =>
-            index >= 0 && index < HingeJointNames.Length ? HingeJointNames[index] : null;
+            index >= 0 && index < hingeJointNames.Length ? hingeJointNames[index] : null;
+
+        /// <summary>Finds a bone or hinge joint anchor by its GameObject name (how
+        /// a saved SkeletonComposition refers to it), along with the joint name
+        /// that anchor maps to on the avatar body.</summary>
+        public bool TryFindAnchor(string anchorName, out Transform anchor, out string jointName)
+        {
+            for (int i = 0; i < boneLineRenderers.Count; i++)
+            {
+                if (boneLineRenderers[i].name != anchorName) continue;
+                anchor = boneLineRenderers[i].transform;
+                jointName = BoneJointName(i);
+                return true;
+            }
+
+            for (int i = 0; i < hingeJointAnchors.Count; i++)
+            {
+                if (hingeJointAnchors[i].name != anchorName) continue;
+                anchor = hingeJointAnchors[i];
+                jointName = HingeJointName(i);
+                return true;
+            }
+
+            anchor = null;
+            jointName = null;
+            return false;
+        }
+
+        /// <summary>How many elements are placed on this rig right now.</summary>
+        public int PlacedElementCount()
+        {
+            int count = 0;
+            foreach (Transform anchor in transform)
+            {
+                foreach (Transform child in anchor)
+                {
+                    if (child.TryGetComponent(out RaymarchableElement _)) count++;
+                }
+            }
+            return count;
+        }
+
+        /// <summary>Takes everything placed on this rig off it for good (and its
+        /// copies off the avatar body).</summary>
+        public void RemovePlacedElements()
+        {
+            foreach (Transform anchor in transform)
+            {
+                foreach (Transform child in anchor)
+                {
+                    if (child.TryGetComponent(out SkeletonPlacement placed)) placed.Remove();
+                }
+            }
+        }
 
         /// <summary>Called once per frame while a primitive is held, to preview
         /// where it would land. Mirrors SkeletonPlacement.OnReleased's own

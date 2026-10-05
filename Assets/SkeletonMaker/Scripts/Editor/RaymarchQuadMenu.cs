@@ -77,7 +77,6 @@ namespace SkeletonMaker
 
             var soQuad = new SerializedObject(quad);
             soQuad.FindProperty("contextToggleAction").objectReferenceValue = FindAction("XRI Left Interaction/Toggle Context");
-            soQuad.FindProperty("smoothingThumbstick").objectReferenceValue = FindAction("XRI Left/Thumbstick");
             soQuad.ApplyModifiedPropertiesWithoutUndo();
 
             var grab = go.AddComponent<RaymarchQuadGrab>();

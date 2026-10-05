@@ -170,6 +170,27 @@ namespace SkeletonMaker
             avatarDuplicate = AvatarDuplicateManager.Instance?.PlaceDuplicate(jointName, element, transform);
         }
 
+        /// <summary>Puts a freshly spawned element straight onto an anchor at the
+        /// given local pose, as if it had been carried there - for rebuilding a
+        /// saved composition. Set its size and color first: the avatar body's
+        /// copy is taken here.</summary>
+        public void PlaceLoaded(Transform anchor, string jointName, Vector3 localPosition, Quaternion localRotation)
+        {
+            transform.SetParent(anchor, false);
+            transform.SetLocalPositionAndRotation(localPosition, localRotation);
+            leftTable = true;
+            avatarDuplicate = AvatarDuplicateManager.Instance?.PlaceDuplicate(jointName, element, transform);
+        }
+
+        /// <summary>Takes this element off the skeleton for good, along with its
+        /// copy on the avatar body.</summary>
+        public void Remove()
+        {
+            if (mirrorPartner != null) mirrorPartner.mirrorPartner = null;
+            if (avatarDuplicate != null) Destroy(avatarDuplicate);
+            Destroy(gameObject);
+        }
+
         // The same element again on the other side of the body: its own,
         // separately grabbable copy on the opposite limb's anchor.
         private void PlaceMirrored(SkeletonRig rig, Transform mirrorAnchor, string mirrorJointName)
