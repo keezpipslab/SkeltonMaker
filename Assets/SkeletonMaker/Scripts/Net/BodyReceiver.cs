@@ -7,7 +7,8 @@ namespace SkeletonMaker
     /// Turns the body messages coming in over the OscLink into skeletons on
     /// the stage: one RemoteSkeleton per performer id, made when the first
     /// message from them arrives and removed again once they have been silent
-    /// for a while.
+    /// for a while. Only in the stages listed here: in the others nobody else
+    /// is on the stage, whatever comes in.
     /// </summary>
     public class BodyReceiver : MonoBehaviour
     {
@@ -26,9 +27,14 @@ namespace SkeletonMaker
         [Tooltip("Where your own body is shown when it comes back in (the link's Accept Own Id), in stage meters from where you really are.")]
         [SerializeField] private Vector3 echoShift = new Vector3(0f, 0f, 1.5f);
 
+        [Tooltip("The stages other performers are shown in. Everywhere, if there is no StageController.")]
+        [SerializeField] private Stage[] stagesShown = { Stage.Join, Stage.Record };
+
         private readonly Dictionary<int, RemoteSkeleton> skeletons = new Dictionary<int, RemoteSkeleton>();
         private readonly List<int> gone = new List<int>();
         private int made;
+        private int shiftedFromId = int.MaxValue;
+        private Vector3 shiftedBy;
 
         /// <summary>Everyone on the stage right now, by performer id.</summary>
         public IReadOnlyDictionary<int, RemoteSkeleton> Skeletons => skeletons;
@@ -43,8 +49,24 @@ namespace SkeletonMaker
             if (link != null) link.Received -= OnReceived;
         }
 
+        /// <summary>Shows every performer with this id or a higher one moved by
+        /// shift, in stage meters (a recording, which would otherwise stand
+        /// exactly where it was recorded).</summary>
+        public void ShiftFrom(int id, Vector3 shift)
+        {
+            shiftedFromId = id;
+            shiftedBy = shift;
+        }
+
+        private bool Shown()
+        {
+            var stages = StageController.Instance;
+            return stages == null || System.Array.IndexOf(stagesShown, stages.Current) >= 0;
+        }
+
         private void OnReceived(OscMessage message)
         {
+            if (!Shown()) return;
             if (!OscBody.TryParseAddress(message.Address, out int id, out string leaf)) return;
             bool own = id == link.PerformerId;
             if (own && !link.AcceptOwnId) return;
@@ -54,7 +76,7 @@ namespace SkeletonMaker
                 skeleton = Make(id);
                 skeletons[id] = skeleton;
             }
-            skeleton.ExtraShift = own ? echoShift : Vector3.zero;
+            skeleton.ExtraShift = own ? echoShift : id >= shiftedFromId ? shiftedBy : Vector3.zero;
             skeleton.InTheRoom = !own && !link.RemoteIsThisPc;
             skeleton.Handle(leaf, message);
         }
@@ -87,9 +109,10 @@ namespace SkeletonMaker
         private void Update()
         {
             float now = Time.unscaledTime;
+            bool shown = Shown();
             gone.Clear();
             foreach (var pair in skeletons)
-                if (now - pair.Value.LastHeard > forgetAfter) gone.Add(pair.Key);
+                if (!shown || now - pair.Value.LastHeard > forgetAfter) gone.Add(pair.Key);
 
             foreach (int id in gone)
             {

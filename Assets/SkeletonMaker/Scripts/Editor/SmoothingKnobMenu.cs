@@ -47,13 +47,6 @@ namespace SkeletonMaker
         /// wired to the quad and to both hands' grips, turning from min to max.</summary>
         internal static T BuildKnob<T>(string name, Vector3 position, Quaternion rotation, RaymarchQuad quad, float min, float max) where T : Knob
         {
-            Transform left = null, right = null;
-            foreach (var grabber in Object.FindObjectsByType<HandGrabber>(FindObjectsInactive.Include, FindObjectsSortMode.None))
-            {
-                if (grabber.name.Contains("Left")) left = grabber.transform;
-                else if (grabber.name.Contains("Right")) right = grabber.transform;
-            }
-
             var root = new GameObject(name);
             Undo.RegisterCreatedObjectUndo(root, "Add " + name);
             root.transform.SetPositionAndRotation(position, rotation);
@@ -102,18 +95,32 @@ namespace SkeletonMaker
             so.FindProperty("minValue").floatValue = min;
             so.FindProperty("maxValue").floatValue = max;
 
-            var handsProp = so.FindProperty("hands");
-            handsProp.arraySize = 2;
-            SetHand(handsProp.GetArrayElementAtIndex(0), "XRI Left Interaction/Select", left);
-            SetHand(handsProp.GetArrayElementAtIndex(1), "XRI Right Interaction/Select", right);
+            SetHands(so.FindProperty("hands"), "grip", "Select");
             so.ApplyModifiedPropertiesWithoutUndo();
 
             return knob;
         }
 
-        private static void SetHand(SerializedProperty hand, string action, Transform controller)
+        /// <summary>Fills a list of hands with both of them: each one's grab point
+        /// as "controller", and its XRI interaction action (Select = the grip,
+        /// Activate = the trigger) under the given field name.</summary>
+        internal static void SetHands(SerializedProperty handsProp, string actionField, string action)
         {
-            hand.FindPropertyRelative("grip").objectReferenceValue = FindAction(action);
+            Transform left = null, right = null;
+            foreach (var grabber in Object.FindObjectsByType<HandGrabber>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            {
+                if (grabber.name.Contains("Left")) left = grabber.transform;
+                else if (grabber.name.Contains("Right")) right = grabber.transform;
+            }
+
+            handsProp.arraySize = 2;
+            SetHand(handsProp.GetArrayElementAtIndex(0), actionField, "XRI Left Interaction/" + action, left);
+            SetHand(handsProp.GetArrayElementAtIndex(1), actionField, "XRI Right Interaction/" + action, right);
+        }
+
+        private static void SetHand(SerializedProperty hand, string actionField, string action, Transform controller)
+        {
+            hand.FindPropertyRelative(actionField).objectReferenceValue = FindAction(action);
             hand.FindPropertyRelative("controller").objectReferenceValue = controller;
         }
 
@@ -127,7 +134,7 @@ namespace SkeletonMaker
             return null;
         }
 
-        private static Material GetOrCreateMaterial(string name, Color color, bool unlit)
+        internal static Material GetOrCreateMaterial(string name, Color color, bool unlit)
         {
             string path = "Assets/SkeletonMaker/Materials/" + name + ".mat";
             var mat = AssetDatabase.LoadAssetAtPath<Material>(path);

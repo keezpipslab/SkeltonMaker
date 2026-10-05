@@ -19,11 +19,11 @@ Open scene: `Assets/SkeletonMaker/Scenes/SkeletonBuilder.unity`
   element within reach and parents it to the hand, keeping the exact orientation/offset it was
   grabbed in (no snapping).
 - **Resize while held** (uses both thumbsticks regardless of which hand is holding):
-  - Left stick **Y**: uniform scale - multiplies all 3 axes by the same factor, so it preserves
+  - Right stick **up/down**: uniform scale - multiplies all 3 axes by the same factor, so it preserves
     whatever shape the other 3 controls already gave it instead of pulling it back toward a cube
-  - Left stick **X**: height (local Y)
-  - Right stick **X**: width (local X)
-  - Right stick **Y**: depth (local Z)
+  - Left stick **up/down**: height (local Y)
+  - Left stick **left/right**: width (local X)
+  - Right stick **left/right**: depth (local Z)
 - **Hold near the skeleton**: the nearest bone line brightens (yellow) as the held element gets
   within 35cm, turning green once within the 15cm placement radius - previewing which bone it'll
   land on before you let go. Near a hinge joint (shoulder, elbow, wrist, hip, knee, ankle), both
@@ -40,8 +40,12 @@ Open scene: `Assets/SkeletonMaker/Scenes/SkeletonBuilder.unity`
   than the skeleton root, and a fresh copy appears back at its table slot.
 - **Release far away**: the element waits 4s (grace period to re-grab it), then teleports back to
   its home slot on the table (the same instance - re-grabbing during the 4s cancels this).
+- **Duplicate**: hold **A** (right controller) while squeezing the grip of either hand at a shape,
+  and the hand takes a copy, leaving the original where it is - on the table or on the skeleton.
+- **Mirror**: the **Mirror** button beside the dials (or the **M** key) switches mirror placement
+  on and off; while it's lit, a shape placed on one side of the body is also placed on the other.
 
-## Stages (tutorial, build, math)
+## Stages (tutorial, build, math, join - and a hidden one to record in)
 
 The scene is one Unity scene split into stages by `StageController` (on the `Stages` object), which
 switches whole objects on and off: an object listed under a stage is active only while a stage
@@ -52,7 +56,7 @@ listing it is current, and anything listed nowhere (XR rig, table, managers) is 
   text above it. `TutorialGuide` walks through seven steps and moves on as soon as each has actually
   been done, switching each new thing on when its step starts:
   1. pick a shape up;
-  2. scale it (left stick up/down);
+  2. scale it (right stick up/down);
   3. reshape it (the other three stick axes; it's changing the width that counts);
   4. color it - the color baths appear;
   5. place it - the `Practice Stick` appears where the skeleton's spine will be: a `SkeletonRig`
@@ -89,12 +93,40 @@ listing it is current, and anything listed nowhere (XR rig, table, managers) is 
     layer of copies is marched, not just those near a shape.
 
   The dial goes back to neutral when the stage is left, so Build always shows the skeleton as built.
+- **Join** - the building is over: the table, the shapes on it (`LooseShapes`, on the `Stages`
+  object), the color baths and the skeleton they were hung on are gone, leaving the avatar wearing
+  what was built, the smoothing knob and the mode buttons. The quad starts on your head, so
+  everything is seen raymarched (see Head view; take it off as usual, and it goes back to where it
+  stood when the stage ends). And the other performer appears: this is the only stage, apart from
+  Record, in which anyone else is on the stage - `BodyReceiver` drops whatever comes in during the
+  others (its **Stages Shown**). The avatar is put in Tracking mode
+  for as long as the stage lasts, since your body is only sent while it is tracked, and gets its
+  old mode back afterwards. With nobody on the other end (the `OscLink`'s Remote Host is this PC)
+  the other performer is your own recording, or the dancing fake peer until you have made one -
+  see `TestPartner` below.
+- **Record** (hidden) - **H** goes there from any stage, and **H** or **B** goes back to where you
+  were. It shows the skeleton, the avatar, the quad and a text, puts the avatar in Tracking mode,
+  and plays the saved recording so you can check it. **A** on the right controller (or **R**)
+  starts a new one after a 3 s countdown, and stops and saves it. It is kept in
+  `body-recording.oscrec` under `Application.persistentDataPath`, so it is there in every later
+  session. A recording with less than 2 s of body in it (tracking wasn't running, or A was pressed
+  twice) is thrown away and the saved one kept.
 
-**B** on the right controller (or Enter) is "next stage": out of the tutorial into Build, then back
-and forth between Build and Math. `StageController.Instance.Go(stage)` / `Next()` do it from code.
-Set **Start Stage** to Build on the `Stages` object to skip the tutorial while working on the
-builder. Run Add Stages again after adding something to the scene the tutorial shouldn't show (or
-edit the lists by hand).
+**B** on the right controller (or Enter) is "next stage": out of the tutorial into Build, then
+round Build, Math and Join. The **Finished** button goes straight to Join.
+`StageController.Instance.Go(stage)` / `Next()` / `ToggleRecord()` do it from code. Set **Start
+Stage** on the `Stages` object to skip ahead while working on one stage. Run Add Stages again after
+adding something to the scene the tutorial shouldn't show (or edit the lists by hand).
+
+### Buttons
+
+`SkeletonMaker > Add Buttons` builds five flat cubes the size of a dial, around the dials:
+**Mirror** (`MirrorToggle`, lit while mirror placement is on) under the smoothing knob, **Finished**
+(`FinishedButton`, on to Join) beside it, and in a row above the dials **Still**, **Animation** and
+**You** (`ModeButton`), which choose what the avatar follows; the current one is lit. Buttons are
+pressed with the **trigger**: pull either trigger while that hand is at the cube (`PushButton`;
+within 8 cm). The grip stays for picking things up and turning the dials. Move the objects to put
+them elsewhere; the menu leaves a button that's already there where it is.
 
 ## Saving and loading a skeleton
 
@@ -188,11 +220,11 @@ quad path, but primitives-only and rewritten to this project's conventions.
 - `RaymarchQuad` (on the quad) gathers every active `Visual` child under each entry in its
   **Sources** list every frame (after all `LateUpdate`s, so after `AvatarDanceSource` has posed the
   stand-in) and sends up to 64 shapes to the material via a `MaterialPropertyBlock`. The menu wires
-  two sources: the stand-in (visible) and the main `Skeleton` (wired but **Visible** off) - tick
+  two sources, both visible from the start: the stand-in and the main `Skeleton` - tick
   **Visible** per source to toggle, at runtime too, or call `ToggleSource(index)` /
   `SetSourceVisible(index, bool)`. Look settings (per-source color, blend radius, light, ambient,
   specular, shadow/AO strength, max steps, background) live on the component.
-  **Show Held** (on by default, gold **Held Color**) also draws the primitive currently held in a hand,
+  **Show Held** (on by default, grey **Held Color**) also draws the primitive currently held in a hand,
   which is not under any source root (`Grabbable.Held` tracks what is in a hand).
   **Show Table** (on by default, green **Table Color**) draws every `RaymarchableElement` in the scene
   that is neither placed on a skeleton (its anchor's parent isn't the rig) nor currently held - i.e.
@@ -200,10 +232,20 @@ quad path, but primitives-only and rewritten to this project's conventions.
 - The quad itself can be moved: squeeze the **left** controller's grip while your hand is at the quad
   (`RaymarchQuadGrab`, kept separate from the `Grabbable`/`HandGrabber` system used by placeable primitives
   so the right hand - which shares that system's layer mask with every primitive - never competes for it).
+- **Head view**: carry the quad to your head and let go there (hand within 25 cm of the headset) and
+  it sticks: it rides 15 cm in front of the eyes, 1.2 m wide, so everything you look at is
+  raymarched. It is the same window, worn like glasses - no extra render pass, and a pixel that
+  looks at no shape costs a few dot products per shape and nothing more. While it is on, the quad
+  draws only the shapes (so the table, the dials and the line skeletons stay visible around them),
+  and shadows and occlusion are off and rays stop at 48 steps, since every pixel on screen is now
+  a raymarched one; all of that is on `RaymarchQuadGrab` (**Head Clips Background**, **Head Cheap
+  Shading**, **Head Max Steps**) and is undone when it comes off. Squeeze the left grip next to
+  your head to take it off: it is back in your hand, as it was held when it went on. Raymarched
+  shapes are drawn over everything further away than the quad, without depth of their own.
 - The left controller's primary button (X) calls `ToggleContext()`, which flips **Show Table** together
   with every source whose **Include In Context Toggle** is ticked (the menu ticks it for the main
-  skeleton) - one press declutters down to just the dancer, another press brings the table and
-  reference pose back.
+  skeleton) - everything is shown to begin with; one press declutters down to just the dancer,
+  another press brings the table and reference pose back.
 - **Smoothing** is set with the **Smoothing Knob** (`SmoothingKnob`, a `Knob` like the math stage's dials, built by `SkeletonMaker > Add Smoothing Knob`):
   a small disk with a gold indicator sphere floating left of the table, with the value in a text above it.
   Squeeze either hand's grip while that hand is at the disk and twist your wrist about the disk's axis like
@@ -283,16 +325,15 @@ direction to 0.0 degrees at different moments of the dance, and the stand-in's l
 the main skeleton's. Torso joints that touch several bones use one of them as reference, so they are
 only approximate.
 
-**Still / Animation / Tracking**: either controller's trigger (XRI's "Activate" action - unused
-elsewhere in this project, since only grip and the thumbsticks are already taken) steps the stand-in
-through three modes (`AvatarMode`, `AvatarDanceSource.Mode`):
+**Still / Animation / You**: the three mode buttons above the dials put the stand-in in one of
+three modes (`AvatarMode`, `AvatarDanceSource.Mode`):
 
 - **Still** - the frozen A-pose. `AvatarDanceSource` copies the main `SkeletonRig`'s own
   `Bone_`/`Joint_` local transforms straight onto the stand-in's matching children every frame - the
   main rig's pose never changes, so it's always the correct, authoritative "standing still" reference
   rather than a separately cached snapshot that could go stale.
 - **Animation** - the dance, as described above.
-- **Tracking** - the player's own body, from Meta's Movement SDK (see below).
+- **Tracking** (the **You** button) - the player's own body, from Meta's Movement SDK (see below).
 
 Whenever a mode starts, the avatar is put where the still avatar stands: the source's hips are moved
 over the still pose's hips once, and that offset is then kept, so from there on the avatar moves
@@ -341,7 +382,7 @@ Project settings that matter:
   needed) and **Fidelity = High**.
 
 Scene: `SkeletonMaker > Add Body Tracking Source` adds a `Body Tracking Source` object and wires it
-into `AvatarDanceSource.bodySource` (Tracking mode is skipped by the trigger while that is empty). It
+into `AvatarDanceSource.bodySource` (the You button does nothing while that is empty). It
 holds:
 
 - `MetaSourceDataProvider` (Movement SDK; an `OVRBody`) - kept disabled until Tracking mode starts.
@@ -371,8 +412,9 @@ route gives no camera pictures in the editor, and two owners of the passthrough 
 - **`OVR Manager`** (`OVRManager`, Enable Passthrough on, Tracking Origin **Stage**). Meta's
   passthrough only runs with one in the scene. It also sets the tracking origin, which the XR Origin
   follows: the floor, with recentering off.
-- **`Passthrough`** (`OVRPassthroughLayer` + `PassthroughView`). The room is shown in the stages
-  listed under **Stages Shown** (the tutorial); **T** flips it until the next stage change; and a
+- **`Passthrough`** (`OVRPassthroughLayer` + `PassthroughView`). **Off in every stage for now**:
+  the room is shown in the stages listed under **Stages Shown**, and that list is empty. **T**
+  still flips it until the next stage change; and a
   remote performer drawn on top of the real one holds it on (`PassthroughView.Require`). Showing the
   room = the layer unhidden, the camera clearing to transparent instead of to the skybox (passthrough
   is composited *under* the scene, so it shows wherever nothing opaque was drawn) and
@@ -462,19 +504,28 @@ elements of the `state`'s revision have arrived.
   sources (the 64 shapes are shared with everything else; the console warns when they run out).
 - `AvatarDriver` - the calibrate-and-pose part that used to live in `AvatarDanceSource`, now shared
   by the stand-in and every remote skeleton.
-- `BodyRecorder` (R) / `BodyPlayer` (P) - record what is sent (or received) to `body-recording.oscrec`
+- `BodyRecorder` / `BodyPlayer` - record what is sent (or received) to `body-recording.oscrec`
   and play it back in as performer 10 (further recorded performers as 11, 12, ...), looping.
 - `FakePeer` - sends the dance as performer 2, wearing the local skeleton.
+- `TestPartner` - the other performer when there is none: runs the recorder and player in the
+  hidden Record stage, and in Join plays the recording (or switches the fake peer on while there is
+  no recording yet) whenever Remote Host is this PC. The recording would stand exactly where you
+  stood while making it, so it is shown moved by **Recording Shift** (stage meters).
 
 ### Testing with one PC
 
 Leave **Remote Host** on 127.0.0.1 so everything sent comes straight back in.
 
-1. **Fake peer**: switch on `Shared Stage > Fake Peer`. A second skeleton dances at its Stage
-   Position; no body tracking needed.
-2. **Meet yourself**: tick **Accept Own Id** on the `OscLink` and go to Tracking mode. Your own body
-   comes back as a remote skeleton, moved by the `BodyReceiver`'s **Echo Shift**. Give the link a
+Other performers only show in the Join and Record stages.
+
+1. **Record and replay**: H, then A (or R) to record yourself and A again to save. From then on
+   that recording is who you meet in Join.
+2. **Fake peer**: with nothing recorded yet, Join shows a second skeleton dancing at the fake
+   peer's Stage Position; no body tracking needed. `TestPartner` switches `Shared Stage > Fake
+   Peer` on and off itself.
+3. **Meet yourself**: tick **Accept Own Id** on the `OscLink` and go to Join. Your own body comes
+   back as a remote skeleton, moved by the `BodyReceiver`'s **Echo Shift**. Give the link a
    **Delay** of a few seconds and it follows you around.
-3. **Record and replay**: R while tracking, R again to stop, P to dance with the recording.
-4. **A second PC without a headset** can run the same scene with the fake peer or a recording and
-   its Remote Host set to the first PC, to try the real network.
+4. **A second PC without a headset** can run the same scene with its Remote Host set to the first
+   PC, to try the real network (switch its `Fake Peer` on by hand: with a remote host that isn't
+   this PC, `TestPartner` brings nobody on).

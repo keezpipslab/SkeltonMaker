@@ -17,13 +17,9 @@ namespace SkeletonMaker
         [Tooltip("The stand-in skeleton root whose Bone_/Joint_ children get repositioned. Defaults to this GameObject.")]
         [SerializeField] private Transform standInRoot;
 
-        [Tooltip("Still: the frozen A-pose (matching the main skeleton). Animation: the dance. Tracking: the player's own movement. Cycled at runtime by either controller trigger below, or set it here directly for testing.")]
+        [Tooltip("Still: the frozen A-pose (matching the main skeleton). Animation: the dance. Tracking: the player's own movement. Chosen at runtime with the three ModeButtons, or set it here directly for testing.")]
         [FormerlySerializedAs("isDancing")]
         [SerializeField] private AvatarMode mode = AvatarMode.Animation;
-
-        [Tooltip("Either controller's trigger (XRI's \"Activate\" action) steps to the next mode - unused elsewhere in this project.")]
-        [SerializeField] private InputActionReference leftToggleAction;
-        [SerializeField] private InputActionReference rightToggleAction;
 
         [Tooltip("Tracking mode only. Off: the avatar stands at a distance, where the still one does. On: it is worn - every joint sits on the player's own. Flipped at runtime by Y on the left controller (or E).")]
         [SerializeField] private bool embody;
@@ -38,6 +34,16 @@ namespace SkeletonMaker
         private bool placed;
 
         private bool activeEmbodied;
+
+        // The skeleton that is built on: the still pose is read off it, also in
+        // the stages where it is switched off (Join).
+        private SkeletonRig mainRig;
+
+        private SkeletonRig MainRig()
+        {
+            if (mainRig == null) mainRig = BodyReceiver.MainRig();
+            return mainRig;
+        }
         private InputAction embodyAction;
 
         public AvatarMode Mode
@@ -45,6 +51,9 @@ namespace SkeletonMaker
             get => mode;
             set => mode = value;
         }
+
+        /// <summary>Whether there is a tracked body to follow at all.</summary>
+        public bool CanTrack => bodySource != null;
 
         public bool Embody
         {
@@ -60,8 +69,6 @@ namespace SkeletonMaker
             animatorSource = null;
             activeMode = AvatarMode.Still;
             placed = false;
-            if (leftToggleAction != null) { leftToggleAction.action.Enable(); leftToggleAction.action.performed += OnToggle; }
-            if (rightToggleAction != null) { rightToggleAction.action.Enable(); rightToggleAction.action.performed += OnToggle; }
 
             // Built here rather than wired in the scene: Y is the one face button still free.
             if (embodyAction == null)
@@ -78,21 +85,8 @@ namespace SkeletonMaker
             embodyAction.Disable();
             ShowHeadPrimitives(true);
             activeEmbodied = false;
-            if (leftToggleAction != null) leftToggleAction.action.performed -= OnToggle;
-            if (rightToggleAction != null) rightToggleAction.action.performed -= OnToggle;
             if (activeMode == AvatarMode.Tracking && bodySource != null) bodySource.End();
             activeMode = AvatarMode.Still;
-        }
-
-        private void OnToggle(InputAction.CallbackContext ctx)
-        {
-            if (StageCalibrator.IsCapturing) return; // the trigger is marking a floor point just now
-            switch (mode)
-            {
-                case AvatarMode.Still: mode = AvatarMode.Animation; break;
-                case AvatarMode.Animation: mode = bodySource != null ? AvatarMode.Tracking : AvatarMode.Still; break;
-                default: mode = AvatarMode.Still; break;
-            }
         }
 
         private void LateUpdate()
@@ -145,7 +139,7 @@ namespace SkeletonMaker
             return true;
         }
 
-        // Also runs when the mode is changed straight in the Inspector, not only by the triggers.
+        // Runs however the mode was changed: a ModeButton, a stage, or straight in the Inspector.
         private void EnterMode(AvatarMode next)
         {
             if (bodySource != null && Application.isPlaying)
@@ -179,7 +173,7 @@ namespace SkeletonMaker
         // tracking space whose floor needn't be the scene's.
         private bool Place(IAvatarPoseSource source)
         {
-            var mainRig = SkeletonRig.Instance != null ? SkeletonRig.Instance : FindFirstObjectByType<SkeletonRig>();
+            var mainRig = MainRig();
             var stillHips = mainRig != null ? mainRig.transform.Find("Bone_Hips_Spine") : null;
             if (stillHips == null || !source.TryGetPose("Hips", out var hips, out _)) return false;
 
@@ -216,7 +210,7 @@ namespace SkeletonMaker
 
         private void DriveFromRestPose()
         {
-            var mainRig = SkeletonRig.Instance;
+            var mainRig = MainRig();
             if (mainRig == null) return;
             foreach (Transform child in standInRoot)
             {

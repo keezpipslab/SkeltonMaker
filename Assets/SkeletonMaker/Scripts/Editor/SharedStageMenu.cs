@@ -9,8 +9,9 @@ namespace SkeletonMaker
     /// SkeletonMaker > Add Shared Stage: adds what two instances need to meet -
     /// the "Stage Origin" (StageFrame) both calibrate onto, and a "Shared Stage"
     /// object holding the OSC link, the body sender and receiver, the floor-mark
-    /// calibrator, the recorder and player, and a switched-off "Fake Peer" to
-    /// test with. Replaces what a previous run added, keeping nothing of it.
+    /// calibrator, the recorder and player, a switched-off "Fake Peer", and
+    /// the TestPartner that brings the recording (or the fake peer) on in the
+    /// Join stage. Replaces what a previous run added, keeping nothing of it.
     /// </summary>
     public static class SharedStageMenu
     {
@@ -58,9 +59,41 @@ namespace SkeletonMaker
             Wire(fake.AddComponent<FakePeer>(), ("link", link), ("template", DanceAnimator()));
             fake.SetActive(false);
 
+            AddTestPartner();
+
             Selection.activeGameObject = root;
             EditorSceneManager.MarkSceneDirty(root.scene);
-            Debug.Log("Shared Stage added. Give each PC its own Performer Id and the other's address on the OscLink; switch on 'Fake Peer' to test alone.");
+            Debug.Log("Shared Stage added. Give each PC its own Performer Id and the other's address on the OscLink. Alone, the Join stage shows your recording (H to make one), or the fake peer until there is one.");
+        }
+
+        /// <summary>Gives the Shared Stage its TestPartner if it has none yet,
+        /// and wires it (again) to what is there. Changes nothing else.</summary>
+        public static void AddTestPartner()
+        {
+            var link = Object.FindFirstObjectByType<OscLink>(FindObjectsInactive.Include);
+            if (link == null)
+            {
+                Debug.LogWarning("SharedStageMenu: no Shared Stage in the open scene - run 'Add Shared Stage' first.");
+                return;
+            }
+
+            var partner = link.GetComponent<TestPartner>();
+            if (partner == null) partner = Undo.AddComponent<TestPartner>(link.gameObject);
+            var fake = link.GetComponentInChildren<FakePeer>(true);
+            var recordGuide = StagesMenu.FindByName(StagesMenu.RecordGuideName);
+            Wire(partner, ("link", link),
+                ("recorder", link.GetComponent<BodyRecorder>()), ("player", link.GetComponent<BodyPlayer>()),
+                ("receiver", link.GetComponent<BodyReceiver>()),
+                ("fakePeer", fake != null ? fake.gameObject : null),
+                ("label", recordGuide != null ? recordGuide.GetComponent<TextMesh>() : null));
+
+            // The partner switches it on when it is wanted.
+            if (fake != null && fake.gameObject.activeSelf)
+            {
+                Undo.RecordObject(fake.gameObject, "Add Test Partner");
+                fake.gameObject.SetActive(false);
+            }
+            EditorSceneManager.MarkSceneDirty(link.gameObject.scene);
         }
 
         // The Animator the avatar's Animation mode dances with.

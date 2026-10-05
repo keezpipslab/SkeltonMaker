@@ -23,8 +23,8 @@ namespace SkeletonMaker
         private static readonly string[] Instructions =
         {
             "Reach into a shape on the table\nand squeeze the grip to pick it up.",
-            "Keep holding it.\nLeft stick up or down\nmakes it bigger or smaller.",
-            "Now change its shape.\nLeft stick sideways: height.\nRight stick up or down: depth.\nRight stick sideways: width -\nmake it wider or narrower to go on.",
+            "Keep holding it.\nRight stick up or down\nmakes it bigger or smaller.",
+            "Now change its shape.\nLeft stick up or down: height.\nRight stick sideways: depth.\nLeft stick sideways: width -\nmake it wider or narrower to go on.",
             "Give it a color.\nDip it into one of the colored discs\nbeside the table.",
             "Carry it to the upright stick\nbehind the table. When the stick\nturns green, let go to leave it there.\nDropped anywhere else, a shape\nfinds its way back to the table.",
             "This window shows your shapes\nas one smooth surface.\nPut a second shape on the stick,\nclose to the first, and watch them merge.",

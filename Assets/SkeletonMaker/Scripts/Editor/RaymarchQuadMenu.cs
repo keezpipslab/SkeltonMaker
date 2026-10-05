@@ -8,9 +8,10 @@ namespace SkeletonMaker
 {
     /// <summary>
     /// SkeletonMaker > Add Raymarch Quad: creates a RaymarchQuad in the open
-    /// scene, standing between the viewer and the avatar stand-in, with the
-    /// stand-in's shapes shown and the main skeleton's shapes wired up but
-    /// toggled off. Also creates the quad material on first use.
+    /// scene, standing between the viewer and the avatar stand-in, showing
+    /// the shapes on the stand-in and on the main skeleton (and, as always,
+    /// those on the table and in a hand). Also creates the quad material on
+    /// first use.
     /// </summary>
     public static class RaymarchQuadMenu
     {
@@ -69,8 +70,8 @@ namespace SkeletonMaker
                 {
                     label = "Main skeleton",
                     root = skeleton.transform,
-                    visible = false,
-                    color = new Color(0.95f, 0.7f, 0.45f),
+                    visible = true,
+                    color = new Color(0.85f, 0.88f, 0.95f),
                     includeInContextToggle = true,
                 });
             }
@@ -85,6 +86,7 @@ namespace SkeletonMaker
             {
                 var so = new SerializedObject(grab);
                 so.FindProperty("leftController").objectReferenceValue = leftController.transform;
+                so.FindProperty("head").objectReferenceValue = Camera.main != null ? Camera.main.transform : null;
                 so.FindProperty("leftGripAction").objectReferenceValue = FindAction("XRI Left Interaction/Select");
                 so.ApplyModifiedPropertiesWithoutUndo();
             }

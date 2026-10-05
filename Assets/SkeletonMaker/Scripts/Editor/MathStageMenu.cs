@@ -55,36 +55,19 @@ namespace SkeletonMaker
                 EditorUtility.SetDirty(quad);
             }
 
-            WireStage(controller);
+            StagesMenu.WireStages(controller);
 
             Selection.activeGameObject = inflate.gameObject;
             EditorSceneManager.MarkSceneDirty(controller.gameObject.scene);
         }
 
-        /// <summary>Sets the Math stage's objects: everything the Build stage has,
-        /// plus the math dials (if there are any yet).</summary>
-        internal static void WireStage(StageController controller)
+        /// <summary>The math dials there are in the scene (none yet: no Math stage).</summary>
+        internal static List<GameObject> Dials()
         {
             var dials = new List<GameObject>();
             foreach (var knob in Object.FindObjectsByType<InflateKnob>(FindObjectsInactive.Include, FindObjectsSortMode.None)) dials.Add(knob.gameObject);
             foreach (var knob in Object.FindObjectsByType<RepeatKnob>(FindObjectsInactive.Include, FindObjectsSortMode.None)) dials.Add(knob.gameObject);
-
-            var so = new SerializedObject(controller);
-            var math = so.FindProperty("mathObjects");
-            if (dials.Count == 0)
-            {
-                math.arraySize = 0; // no math stage yet: the "next stage" button stays in Build
-            }
-            else
-            {
-                var build = so.FindProperty("buildObjects");
-                math.arraySize = build.arraySize + dials.Count;
-                for (int i = 0; i < build.arraySize; i++)
-                    math.GetArrayElementAtIndex(i).objectReferenceValue = build.GetArrayElementAtIndex(i).objectReferenceValue;
-                for (int i = 0; i < dials.Count; i++)
-                    math.GetArrayElementAtIndex(build.arraySize + i).objectReferenceValue = dials[i];
-            }
-            so.ApplyModifiedProperties();
+            return dials;
         }
     }
 }

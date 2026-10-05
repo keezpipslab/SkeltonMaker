@@ -6,7 +6,7 @@ namespace SkeletonMaker
     /// <summary>
     /// Plays a BodyRecorder file back into the OscLink as if it were arriving
     /// from the other instance, over and over: a partner to rehearse against
-    /// with nobody there. P starts and stops for now.
+    /// with nobody there. Started and stopped by TestPartner.
     /// </summary>
     public class BodyPlayer : MonoBehaviour
     {
@@ -28,15 +28,11 @@ namespace SkeletonMaker
 
         public bool IsPlaying => recording != null;
 
+        /// <summary>The first performer id a recording comes back as.</summary>
+        public int PlayAsId => playAsId;
+
         private void Update()
         {
-            var keyboard = UnityEngine.InputSystem.Keyboard.current;
-            if (keyboard != null && keyboard.pKey.wasPressedThisFrame)
-            {
-                if (IsPlaying) StopPlaying();
-                else StartPlaying();
-            }
-
             if (!IsPlaying) return;
             float elapsed = Time.unscaledTime - startedAt;
             while (next < recording.Count && recording[next].time <= elapsed) Play(recording[next++].datagram);
@@ -55,14 +51,16 @@ namespace SkeletonMaker
 
         private void OnDisable() => recording = null;
 
-        public void StartPlaying()
+        /// <summary>Plays the saved recording from its start (again, if it is
+        /// already playing). False if there is none.</summary>
+        public bool StartPlaying()
         {
-            if (link == null) return;
+            if (link == null) return false;
             var loaded = BodyRecorder.Load(slot);
             if (loaded == null || loaded.Count == 0)
             {
                 Debug.Log($"BodyPlayer: nothing recorded yet at {BodyRecorder.PathFor(slot)}", this);
-                return;
+                return false;
             }
 
             recording = loaded;
@@ -70,6 +68,7 @@ namespace SkeletonMaker
             next = 0;
             startedAt = Time.unscaledTime;
             Debug.Log($"BodyPlayer: playing {recording.Count} datagram(s), {recording[recording.Count - 1].time:0.0} s.", this);
+            return true;
         }
 
         public void StopPlaying()

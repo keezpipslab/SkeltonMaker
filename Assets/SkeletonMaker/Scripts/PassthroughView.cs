@@ -9,8 +9,8 @@ namespace SkeletonMaker
     /// Decides whether the headset shows the real room (Meta passthrough)
     /// behind the scene, or the skybox. Three things have a say:
     ///
-    /// - the app's stage: the room is shown in the stages listed here (the
-    ///   tutorial), the skybox in the others;
+    /// - the app's stage: the room is shown in the stages listed here (none
+    ///   for now), the skybox in the others;
     /// - T on the keyboard flips that until the next stage change;
     /// - Require(): anything that makes not seeing the room unsafe - a remote
     ///   performer drawn right where a real person stands - holds it on, and
@@ -39,7 +39,7 @@ namespace SkeletonMaker
         [SerializeField] private RaymarchQuad quad;
 
         [Tooltip("The stages that start out showing the room.")]
-        [SerializeField] private Stage[] stagesShown = { Stage.Tutorial };
+        [SerializeField] private Stage[] stagesShown = { };
 
         private bool wanted;
         private bool applied;

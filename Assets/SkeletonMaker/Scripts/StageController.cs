@@ -9,6 +9,8 @@ namespace SkeletonMaker
         Tutorial,
         Build,
         Math,
+        Join,
+        Record,
     }
 
     /// <summary>
@@ -17,11 +19,13 @@ namespace SkeletonMaker
     /// stages listing it is current, and anything listed nowhere (the XR rig,
     /// the table, the managers) is always there. The tutorial is just the
     /// builder with most of it switched off, and the math stage the builder
-    /// with a few dials added, so all three run on the same rig and controls,
+    /// with a few dials added, so all of them run on the same rig and controls,
     /// and moving on is instant.
     ///
     /// B on the right controller (or Enter) moves on: out of the tutorial
-    /// into Build, then back and forth between Build and Math.
+    /// into Build, then round Build, Math and Join (where the other performer
+    /// appears). Record is hidden: H goes there from anywhere and back again,
+    /// and "next" never passes through it.
     /// </summary>
     [DefaultExecutionOrder(-100)] // before anything it switches off gets to wake up
     public class StageController : MonoBehaviour
@@ -34,8 +38,13 @@ namespace SkeletonMaker
         [SerializeField] private GameObject[] tutorialObjects;
         [SerializeField] private GameObject[] buildObjects;
         [SerializeField] private GameObject[] mathObjects;
+        [SerializeField] private GameObject[] joinObjects;
+        [SerializeField] private GameObject[] recordObjects;
 
         public Stage Current { get; private set; }
+
+        // Where H came from, to go back to.
+        private Stage beforeRecord = Stage.Build;
 
         public event Action<Stage> Changed;
 
@@ -68,19 +77,38 @@ namespace SkeletonMaker
         private void Update()
         {
             if (nextAction.WasPressedThisFrame()) Next();
+
+            var keyboard = Keyboard.current;
+            if (keyboard != null && keyboard.hKey.wasPressedThisFrame) ToggleRecord();
         }
 
-        /// <summary>Tutorial -> Build -> Math -> Build -> Math ... (staying in
-        /// Build while no math stage has been set up).</summary>
+        /// <summary>Tutorial -> Build -> Math -> Join -> Build ... (leaving out
+        /// a stage that hasn't been set up), and out of Record back to where
+        /// it was entered from.</summary>
         public void Next()
         {
-            bool hasMath = mathObjects != null && mathObjects.Length > 0;
-            Go(Current == Stage.Build && hasMath ? Stage.Math : Stage.Build);
+            switch (Current)
+            {
+                case Stage.Record: Go(beforeRecord); break;
+                case Stage.Build: Go(Has(mathObjects) ? Stage.Math : Has(joinObjects) ? Stage.Join : Stage.Build); break;
+                case Stage.Math: Go(Has(joinObjects) ? Stage.Join : Stage.Build); break;
+                default: Go(Stage.Build); break;
+            }
         }
+
+        /// <summary>Into the hidden Record stage, or back out of it.</summary>
+        public void ToggleRecord()
+        {
+            if (Current == Stage.Record) Go(beforeRecord);
+            else if (Has(recordObjects)) Go(Stage.Record);
+        }
+
+        private static bool Has(GameObject[] objects) => objects != null && objects.Length > 0;
 
         public void Go(Stage stage)
         {
             if (stage == Current) return;
+            if (stage == Stage.Record) beforeRecord = Current;
             Apply(stage);
             Changed?.Invoke(stage);
         }
@@ -114,7 +142,9 @@ namespace SkeletonMaker
             {
                 case Stage.Tutorial: objects = tutorialObjects; break;
                 case Stage.Build: objects = buildObjects; break;
-                default: objects = mathObjects; break;
+                case Stage.Math: objects = mathObjects; break;
+                case Stage.Join: objects = joinObjects; break;
+                default: objects = recordObjects; break;
             }
             return objects ?? Array.Empty<GameObject>();
         }

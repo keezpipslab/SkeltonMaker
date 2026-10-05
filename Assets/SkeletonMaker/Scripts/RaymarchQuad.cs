@@ -51,7 +51,7 @@ namespace SkeletonMaker
 
         [Tooltip("Also draw the primitive currently held in a hand (it is not under any source root).")]
         public bool showHeld = true;
-        public Color heldColor = new Color(1f, 0.85f, 0.4f);
+        public Color heldColor = new Color(0.6f, 0.6f, 0.62f);
 
         [Tooltip("Also draw every spawned primitive that is not yet placed on a skeleton and not currently held - i.e. still sitting on the table. Toggled together with every source whose 'Include In Context Toggle' is set by ToggleContext() (wire a controller button to it, or call it directly).")]
         public bool showTable = true;
