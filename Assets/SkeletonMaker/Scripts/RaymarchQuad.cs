@@ -300,6 +300,10 @@ namespace SkeletonMaker
             if (filter.name != "Visual" || !TryGetKind(filter, out PrimitiveKind kind)) return;
 
             Transform visual = filter.transform;
+
+            // A painted element shows its own color instead of its group's.
+            if (visual.parent != null && visual.parent.TryGetComponent(out ElementColor own)) color = own.Color;
+
             Vector3 scale = visual.lossyScale;
             float sx = Mathf.Abs(scale.x), sy = Mathf.Abs(scale.y), sz = Mathf.Abs(scale.z);
             float minScale = Mathf.Min(sx, Mathf.Min(sy, sz));

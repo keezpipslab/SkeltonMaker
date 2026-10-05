@@ -201,6 +201,7 @@ namespace SkeletonMaker
             {
                 transform.SetParent(null, true);
                 if (element != null) element.ResetSize(); // don't leave it in whatever shape it was resized to
+                if (TryGetComponent(out ElementColor ownColor)) ownColor.Clear(); // nor in whatever color it was dipped in
                 Vector3 pos = element != null ? HomeSpawnPoint.RestingPosition(element) : HomeSpawnPoint.transform.position;
                 transform.SetPositionAndRotation(pos, HomeSpawnPoint.transform.rotation);
             }

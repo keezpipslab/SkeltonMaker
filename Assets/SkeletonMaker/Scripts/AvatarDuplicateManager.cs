@@ -45,6 +45,7 @@ namespace SkeletonMaker
             duplicate.AddComponent<RaymarchShape>().kind = sourceElement.Kind;
             StripInteractivity(duplicate);
             ApplyGhostMaterial(duplicate);
+            if (duplicate.TryGetComponent(out ElementColor ownColor)) ownColor.Apply(); // re-tint: the ghost material is a different one
             return duplicate;
         }
 
