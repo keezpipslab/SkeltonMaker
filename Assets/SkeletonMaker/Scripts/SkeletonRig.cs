@@ -106,6 +106,51 @@ namespace SkeletonMaker
         /// without duplicating the name list.</summary>
         public static IReadOnlyCollection<string> JointNames => Joints.Keys;
 
+        /// <summary>While on (toggled with the M key), placing an element also
+        /// places a copy on the other side of the body, and the held preview
+        /// lights up both sides.</summary>
+        public bool MirrorEnabled { get; set; }
+
+        private readonly List<int> mirroredHighlightScratch = new List<int>();
+
+        private static string MirrorName(string jointName)
+        {
+            if (jointName.StartsWith("Left")) return "Right" + jointName.Substring(4);
+            if (jointName.StartsWith("Right")) return "Left" + jointName.Substring(5);
+            return jointName;
+        }
+
+        /// <summary>The bone on the opposite side of the body (the bone itself for
+        /// the spine/neck ones down the middle).</summary>
+        public int MirrorBoneIndex(int index)
+        {
+            if (index < 0 || index >= Bones.Length) return -1;
+            string from = MirrorName(Bones[index].from), to = MirrorName(Bones[index].to);
+            for (int i = 0; i < Bones.Length; i++)
+            {
+                if (Bones[i].from == from && Bones[i].to == to) return i;
+            }
+            return -1;
+        }
+
+        /// <summary>The same hinge joint on the opposite side of the body.</summary>
+        public int MirrorHingeJointIndex(int index)
+        {
+            if (index < 0 || index >= HingeJointNames.Length) return -1;
+            return System.Array.IndexOf(HingeJointNames, MirrorName(HingeJointNames[index]));
+        }
+
+        /// <summary>Reflects a world-space pose through the rig's left/right
+        /// symmetry plane. The rotation is the reflected one for a shape that is
+        /// itself left/right symmetric, which every primitive here is.</summary>
+        public void MirrorPose(Vector3 position, Quaternion rotation, out Vector3 mirroredPosition, out Quaternion mirroredRotation)
+        {
+            Vector3 p = transform.InverseTransformPoint(position);
+            Quaternion q = Quaternion.Inverse(transform.rotation) * rotation;
+            mirroredPosition = transform.TransformPoint(new Vector3(-p.x, p.y, p.z));
+            mirroredRotation = transform.rotation * new Quaternion(q.x, -q.y, -q.z, q.w);
+        }
+
         private void Awake()
         {
             Instance = this;
@@ -115,6 +160,17 @@ namespace SkeletonMaker
         private void OnDestroy()
         {
             if (Instance == this) Instance = null;
+        }
+
+        private void Update()
+        {
+            if (!Application.isPlaying) return;
+            var keyboard = UnityEngine.InputSystem.Keyboard.current;
+            if (keyboard != null && keyboard.mKey.wasPressedThisFrame)
+            {
+                MirrorEnabled = !MirrorEnabled;
+                Debug.Log($"SkeletonRig: mirror placement {(MirrorEnabled ? "on" : "off")}");
+            }
         }
 
         private void OnValidate()
@@ -331,6 +387,18 @@ namespace SkeletonMaker
 
         private void SetHighlightedBones(IReadOnlyList<int> indices, Color color)
         {
+            if (MirrorEnabled)
+            {
+                mirroredHighlightScratch.Clear();
+                for (int i = 0; i < indices.Count; i++)
+                {
+                    mirroredHighlightScratch.Add(indices[i]);
+                    int mirror = MirrorBoneIndex(indices[i]);
+                    if (mirror >= 0 && mirror != indices[i]) mirroredHighlightScratch.Add(mirror);
+                }
+                indices = mirroredHighlightScratch;
+            }
+
             // Reset any previously-highlighted bone that isn't part of the new set
             // (e.g. moving from one joint's pair to a single mid-bone highlight).
             for (int i = highlightedBoneIndices.Count - 1; i >= 0; i--)

@@ -35,6 +35,34 @@ namespace SkeletonMaker
         private RaymarchableElement element;
         private Coroutine discardRoutine;
 
+        // The copy of this element on the avatar body while it's placed; taken
+        // away again when the element is picked back up, so moving a placed
+        // element moves its copy too instead of leaving the old one behind.
+        private GameObject avatarDuplicate;
+
+        // Set once the table slot no longer belongs to this element: either its
+        // replacement has been spawned there, or it's a copy (duplicate/mirror)
+        // of an element that has a slot of its own.
+        private bool leftTable;
+
+        // The element on the other side of the body that was placed together
+        // with this one in mirror mode (each points at the other).
+        private SkeletonPlacement mirrorPartner;
+
+        /// <summary>Leaves this element where it is and returns a fresh,
+        /// independent copy of it in the same pose, for the hand to take
+        /// instead.</summary>
+        public Grabbable DuplicateForGrab() => Copy(transform.parent).GetComponent<Grabbable>();
+
+        private SkeletonPlacement Copy(Transform parent)
+        {
+            var copy = Instantiate(gameObject, parent).GetComponent<SkeletonPlacement>();
+            copy.name = name;
+            copy.HomeSpawnPoint = HomeSpawnPoint;
+            copy.leftTable = true;
+            return copy;
+        }
+
         private void Awake()
         {
             grabbable = GetComponent<Grabbable>();
@@ -61,6 +89,25 @@ namespace SkeletonMaker
 
         private void OnGrabbed()
         {
+            if (avatarDuplicate != null) Destroy(avatarDuplicate);
+            avatarDuplicate = null;
+
+            // In mirror mode the pair moves as one: the other side goes away
+            // now and is placed afresh wherever this one is released. With
+            // mirror off they simply become two unrelated elements.
+            var partner = mirrorPartner;
+            mirrorPartner = null;
+            if (partner != null)
+            {
+                partner.mirrorPartner = null;
+                var rig = SkeletonRig.Instance;
+                if (rig != null && rig.MirrorEnabled && !partner.grabbable.IsHeld)
+                {
+                    if (partner.avatarDuplicate != null) Destroy(partner.avatarDuplicate);
+                    Destroy(partner.gameObject);
+                }
+            }
+
             if (discardRoutine == null) return;
             StopCoroutine(discardRoutine);
             discardRoutine = null;
@@ -93,25 +140,53 @@ namespace SkeletonMaker
 
         private void PlaceOnJoint(SkeletonRig rig, int jointIndex)
         {
-            transform.SetParent(rig.HingeJointAnchor(jointIndex), true);
+            Place(rig.HingeJointAnchor(jointIndex), rig.HingeJointName(jointIndex));
 
-            if (HomeSpawnPoint != null) HomeSpawnPoint.SpawnReplacement();
-
-            // No-ops until a real avatar (Meta Movement SDK) is wired into an
-            // AvatarBodyTarget's joint slots - see AvatarDuplicateManager.
-            AvatarDuplicateManager.Instance?.PlaceDuplicate(rig.HingeJointName(jointIndex), element, transform);
+            if (!rig.MirrorEnabled) return;
+            int mirrorIndex = rig.MirrorHingeJointIndex(jointIndex);
+            if (mirrorIndex >= 0) PlaceMirrored(rig, rig.HingeJointAnchor(mirrorIndex), rig.HingeJointName(mirrorIndex));
         }
 
         private void PlaceOnSkeleton(SkeletonRig rig, int boneIndex)
         {
-            transform.SetParent(rig.BoneAnchor(boneIndex), true);
+            Place(rig.BoneAnchor(boneIndex), rig.BoneJointName(boneIndex));
 
-            if (HomeSpawnPoint != null) HomeSpawnPoint.SpawnReplacement();
+            if (!rig.MirrorEnabled) return;
+            int mirrorIndex = rig.MirrorBoneIndex(boneIndex);
+            if (mirrorIndex >= 0) PlaceMirrored(rig, rig.BoneAnchor(mirrorIndex), rig.BoneJointName(mirrorIndex));
+        }
+
+        private void Place(Transform anchor, string jointName)
+        {
+            transform.SetParent(anchor, true);
+
+            // Only the first time: once it has been placed, the slot already
+            // holds its replacement, and re-placing it mustn't stack another.
+            if (!leftTable && HomeSpawnPoint != null) HomeSpawnPoint.SpawnReplacement();
+            leftTable = true;
 
             // No-ops until a real avatar (Meta Movement SDK) is wired into an
             // AvatarBodyTarget's joint slots - see AvatarDuplicateManager.
-            AvatarDuplicateManager.Instance?.PlaceDuplicate(rig.BoneJointName(boneIndex), element, transform);
+            avatarDuplicate = AvatarDuplicateManager.Instance?.PlaceDuplicate(jointName, element, transform);
         }
+
+        // The same element again on the other side of the body: its own,
+        // separately grabbable copy on the opposite limb's anchor.
+        private void PlaceMirrored(SkeletonRig rig, Transform mirrorAnchor, string mirrorJointName)
+        {
+            rig.MirrorPose(transform.position, transform.rotation, out Vector3 position, out Quaternion rotation);
+
+            // A centered element on the spine would just land on top of itself.
+            if (Vector3.Distance(position, transform.position) < MinMirrorSeparation) return;
+
+            var mirrored = Copy(mirrorAnchor);
+            mirrored.transform.SetPositionAndRotation(position, rotation);
+            mirrored.mirrorPartner = this;
+            mirrorPartner = mirrored;
+            mirrored.avatarDuplicate = AvatarDuplicateManager.Instance?.PlaceDuplicate(mirrorJointName, mirrored.element, mirrored.transform);
+        }
+
+        private const float MinMirrorSeparation = 0.01f;
 
         private IEnumerator DiscardAfterDelay()
         {
@@ -122,7 +197,7 @@ namespace SkeletonMaker
 
         private void ReturnToTable()
         {
-            if (HomeSpawnPoint != null)
+            if (HomeSpawnPoint != null && !leftTable)
             {
                 transform.SetParent(null, true);
                 if (element != null) element.ResetSize(); // don't leave it in whatever shape it was resized to
@@ -131,8 +206,8 @@ namespace SkeletonMaker
             }
             else
             {
-                // No known table slot (shouldn't normally happen) - fall back
-                // to the old behaviour rather than leaving it stranded.
+                // Its table slot is already taken by its replacement (or it
+                // never had one), so there's nowhere to put it back.
                 Destroy(gameObject);
             }
         }

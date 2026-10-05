@@ -27,14 +27,16 @@ namespace SkeletonMaker
         /// <summary>Called right after an element is placed on the skeleton (already
         /// reparented under its bone anchor). Clones it onto the matching avatar
         /// joint, preserving the same local offset it has relative to its bone, as
-        /// a transparent, non-interactive decoration.</summary>
-        public void PlaceDuplicate(string jointName, RaymarchableElement sourceElement, Transform placedTransform)
+        /// a transparent, non-interactive decoration. Returns the copy (null if
+        /// there was nowhere to put it) so the caller can remove it again once
+        /// the element is picked back up off the skeleton.</summary>
+        public GameObject PlaceDuplicate(string jointName, RaymarchableElement sourceElement, Transform placedTransform)
         {
             var target = AvatarBodyTarget.Instance;
-            if (target == null) return;
+            if (target == null) return null;
 
             Transform jointTransform = target.GetJoint(jointName);
-            if (jointTransform == null) return; // slot not wired up yet
+            if (jointTransform == null) return null; // slot not wired up yet
 
             var duplicate = Instantiate(placedTransform.gameObject, jointTransform);
             duplicate.name = placedTransform.name + " (Avatar Duplicate)";
@@ -43,6 +45,7 @@ namespace SkeletonMaker
             duplicate.AddComponent<RaymarchShape>().kind = sourceElement.Kind;
             StripInteractivity(duplicate);
             ApplyGhostMaterial(duplicate);
+            return duplicate;
         }
 
         private static void StripInteractivity(GameObject duplicate)
