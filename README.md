@@ -305,6 +305,17 @@ drops out later, it holds its last pose.
 `AvatarDanceSource.mode` is a plain serialized enum, so it can also be set directly in the Inspector
 at runtime for quick testing without touching a controller.
 
+**Distant / Embodied** (Tracking mode only): **Y** on the left controller (or **E**) flips
+`AvatarDanceSource.embody`. Off, the tracked avatar stands at a distance as described above. On, it
+is worn: every joint is put where the player's own joint is in the scene, so whatever was built on
+the skeleton sits on the player's body. Still and Animation ignore the switch, and it is remembered
+across mode changes. While worn, the copies on the head bone (`Bone_Neck_Head`) are switched off, as
+they would sit around the player's eyes; they come back when it is taken off. The tracked joints are brought into the scene through the headset: Meta's
+plugin reports the head in the same tracking space as the body joints, and the scene has it as the
+main camera, so the two together give that space's place in the world
+(`AvatarBodyTrackingSource.TryGetTrackingToWorld`) without assuming the XR Origin's tracking origin
+is the one the plugin uses. It is redone every frame, so it follows the rig if that moves.
+
 ### Tracking mode (Meta Movement SDK)
 
 Packages (added to `Packages/manifest.json`, with Meta's scoped registry `npm.developer.oculus.com`):
@@ -337,8 +348,8 @@ holds:
   T-pose by `HumanBodyBones` name (`IAvatarPoseSource`, the same interface the dance Animator is read
   through). It reads the provider's raw tracking-space joints rather than
   `MetaSourceDataProvider.GetSkeletonPose()`, which insists on an `OVRCameraRig` for its tracking
-  space; the tracking space doesn't matter here anyway, since the avatar is placed on the stand-in as
-  described above.
+  space; the tracking space doesn't matter for the distant avatar anyway, since it is placed on the
+  stand-in as described above, and the embodied one works it out from the headset.
 
 `AvatarDanceSource` treats both sources identically: the rest-pose calibration described above uses
 the source's T-pose (the Animator's zero-muscle pose, or the tracked skeleton's bind pose) and is done

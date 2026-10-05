@@ -25,6 +25,9 @@ namespace SkeletonMaker
         [SerializeField] private InputActionReference leftToggleAction;
         [SerializeField] private InputActionReference rightToggleAction;
 
+        [Tooltip("Tracking mode only. Off: the avatar stands at a distance, where the still one does. On: it is worn - every joint sits on the player's own. Flipped at runtime by Y on the left controller (or E).")]
+        [SerializeField] private bool embody;
+
         // anchorRotation = placement * sourceBone.rotation * restInverse[joint]; identity-in-A-pose by construction.
         private readonly Dictionary<string, Quaternion> restInverse = new Dictionary<string, Quaternion>();
         private IAvatarPoseSource calibratedSource;
@@ -41,10 +44,19 @@ namespace SkeletonMaker
         private Vector3 placementPivot;
         private Vector3 placementTarget;
 
+        private bool activeEmbodied;
+        private InputAction embodyAction;
+
         public AvatarMode Mode
         {
             get => mode;
             set => mode = value;
+        }
+
+        public bool Embody
+        {
+            get => embody;
+            set => embody = value;
         }
 
         private void Reset() => standInRoot = transform;
@@ -57,10 +69,22 @@ namespace SkeletonMaker
             placed = false;
             if (leftToggleAction != null) { leftToggleAction.action.Enable(); leftToggleAction.action.performed += OnToggle; }
             if (rightToggleAction != null) { rightToggleAction.action.Enable(); rightToggleAction.action.performed += OnToggle; }
+
+            // Built here rather than wired in the scene: Y is the one face button still free.
+            if (embodyAction == null)
+            {
+                embodyAction = new InputAction("Embody", InputActionType.Button);
+                embodyAction.AddBinding("<XRController>{LeftHand}/{SecondaryButton}");
+                embodyAction.AddBinding("<Keyboard>/e");
+            }
+            embodyAction.Enable();
         }
 
         private void OnDisable()
         {
+            embodyAction.Disable();
+            ShowHeadPrimitives(true);
+            activeEmbodied = false;
             if (leftToggleAction != null) leftToggleAction.action.performed -= OnToggle;
             if (rightToggleAction != null) rightToggleAction.action.performed -= OnToggle;
             if (activeMode == AvatarMode.Tracking && bodySource != null) bodySource.End();
@@ -80,7 +104,17 @@ namespace SkeletonMaker
         private void LateUpdate()
         {
             if (standInRoot == null) standInRoot = transform;
+            if (Application.isPlaying && embodyAction.WasPressedThisFrame()) embody = !embody;
             if (mode != activeMode) EnterMode(mode);
+
+            // Only the tracked body can be worn; taking it off again puts it back at its distance.
+            bool embodied = embody && activeMode == AvatarMode.Tracking;
+            if (embodied != activeEmbodied)
+            {
+                activeEmbodied = embodied;
+                placed = false;
+                ShowHeadPrimitives(true); // off again below once the avatar is actually on the player
+            }
 
             var source = ActiveSource();
             if (source == null || !source.Refresh())
@@ -97,8 +131,31 @@ namespace SkeletonMaker
                 calibratedSource = source;
                 calibratedVersion = source.RestVersion;
             }
-            if (!placed && !Place(source)) { DriveFromRestPose(); return; }
+            if (embodied ? !PlaceOnPlayer() : !placed && !Place(source)) { DriveFromRestPose(); return; }
+            ShowHeadPrimitives(!embodied);
             DriveFromSource(source);
+        }
+
+        // Whatever is built on the head would sit around the player's eyes once worn. Switched off
+        // as objects, which takes them out of the raymarch too; every frame, to catch new ones.
+        private void ShowHeadPrimitives(bool show)
+        {
+            var head = standInRoot != null ? standInRoot.Find("Bone_Neck_Head") : null;
+            if (head == null) return;
+            foreach (Transform primitive in head)
+                if (primitive.gameObject.activeSelf != show) primitive.gameObject.SetActive(show);
+        }
+
+        // Embodied: the tracked joints go exactly where they are in the scene. Redone every frame,
+        // as the rig the player stands in can move.
+        private bool PlaceOnPlayer()
+        {
+            if (!bodySource.TryGetTrackingToWorld(out var position, out var rotation)) return false;
+            placementPivot = Vector3.zero;
+            placementRotation = rotation;
+            placementTarget = position;
+            placed = true;
+            return true;
         }
 
         // Also runs when the mode is changed straight in the Inspector, not only by the triggers.

@@ -139,6 +139,36 @@ namespace SkeletonMaker
             return true;
         }
 
+        /// <summary>Where the space the joints are tracked in sits in the scene:
+        /// world = rotation * tracked + position. Taken from the headset, which
+        /// the runtime reports in that same space and the scene has as its
+        /// camera - there is no OVRCameraRig here to say it outright, and the
+        /// XR Origin's own tracking origin needn't be the one Meta's plugin
+        /// uses. Falls back on the camera's parent (XR Origin's Camera Offset)
+        /// while the plugin has no head pose.</summary>
+        public bool TryGetTrackingToWorld(out Vector3 position, out Quaternion rotation)
+        {
+            position = default;
+            rotation = Quaternion.identity;
+            var camera = Camera.main;
+            if (camera == null) return false;
+
+            const OVRPlugin.Node head = OVRPlugin.Node.Head;
+            if (OVRPlugin.GetNodePositionValid(head) && OVRPlugin.GetNodeOrientationValid(head))
+            {
+                var tracked = OVRPlugin.GetNodePose(head, OVRPlugin.Step.Render).ToOVRPose();
+                rotation = camera.transform.rotation * Quaternion.Inverse(tracked.orientation);
+                position = camera.transform.position - rotation * tracked.position;
+                return true;
+            }
+
+            var space = camera.transform.parent;
+            if (space == null) return false;
+            position = space.position;
+            rotation = space.rotation;
+            return true;
+        }
+
         public bool TryGetPose(string humanoidBone, out Vector3 position, out Quaternion rotation)
         {
             if (poseValid && Bones.TryGetValue(humanoidBone, out var id))
