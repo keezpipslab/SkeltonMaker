@@ -6,8 +6,8 @@ namespace SkeletonMaker
     /// <summary>
     /// The other performer for when there is nobody on the other end: a
     /// recording of yourself. It is made in the hidden Record stage (H) and
-    /// kept on disk, and from then on it is who appears in the Join stage
-    /// whenever the OscLink's Remote Host is this PC itself. Until something
+    /// kept on disk, and from then on it is who appears in the Join and
+    /// Together Math stages whenever the OscLink's Remote Host is this PC itself. Until something
     /// has been recorded the fake peer dances there instead.
     ///
     /// In the Record stage the saved recording plays, so it can be checked.
@@ -41,6 +41,7 @@ namespace SkeletonMaker
         private InputAction recordAction;
 
         private bool withPartner;
+        private bool meeting; // the recording or the fake peer has been brought on (Join, Together Math)
         private AvatarMode modeBefore;
         private float recordAt = -1f; // when the countdown runs out
         private string note = "";
@@ -80,10 +81,19 @@ namespace SkeletonMaker
             recordAt = -1f;
             note = "";
             if (recorder != null && recorder.IsRecording) recorder.StopRecording();
-            if (player != null) player.StopPlaying();
-            if (fakePeer != null) fakePeer.SetActive(false);
 
-            bool partner = stage == Stage.Join || stage == Stage.Record;
+            // From Join into Together Math the same partner simply carries on.
+            bool together = stage == Stage.Join || stage == Stage.TogetherMath;
+            bool meets = together && link != null && link.RemoteIsThisPc;
+            bool carriesOn = meets && meeting;
+            meeting = meets;
+            if (!carriesOn)
+            {
+                if (player != null) player.StopPlaying();
+                if (fakePeer != null) fakePeer.SetActive(false);
+            }
+
+            bool partner = together || stage == Stage.Record;
             if (partner != withPartner && avatar != null)
             {
                 if (partner)
@@ -102,7 +112,7 @@ namespace SkeletonMaker
             {
                 if (player != null) player.StartPlaying();
             }
-            else if (stage == Stage.Join && link != null && link.RemoteIsThisPc)
+            else if (meets && !carriesOn)
             {
                 // Nobody on the other end: the recording, or failing that the dance.
                 bool playing = player != null && player.StartPlaying();

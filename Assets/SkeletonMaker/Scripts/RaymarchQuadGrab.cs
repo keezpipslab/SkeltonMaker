@@ -19,7 +19,7 @@ namespace SkeletonMaker
     /// Squeeze the left grip next to your head to take it off again: it comes
     /// back into the hand, as it was held when it went on.
     ///
-    /// In the stages listed under Head Stages (Join) it goes onto the head by
+    /// In the stages listed under Head Stages (Join, Together Math) it goes onto the head by
     /// itself when the stage begins, and back to where it stood when it ends.
     /// </summary>
     [RequireComponent(typeof(Collider))]
@@ -45,7 +45,7 @@ namespace SkeletonMaker
         [Range(8, 128)]
         [SerializeField] private int headMaxSteps = 48;
         [Tooltip("The stages that begin with the quad on the head. It can still be taken off there.")]
-        [SerializeField] private Stage[] headStages = { Stage.Join };
+        [SerializeField] private Stage[] headStages = { Stage.Join, Stage.TogetherMath };
 
         private Collider col;
         private RaymarchQuad quad;

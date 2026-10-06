@@ -16,7 +16,8 @@ namespace SkeletonMaker
     /// Math is Build plus the math dials. Join is the avatar, the quad, the
     /// smoothing knob and the mode buttons: no table, no shapes to build with
     /// and no skeleton to hang them on (LooseShapes, added here to the Stages
-    /// object, takes the shapes lying on the table away). The hidden Record
+    /// object, takes the shapes lying on the table away). Together Math is
+    /// Join plus the buttons that combine the two avatars. The hidden Record
     /// stage is the skeleton, the avatar, the quad and the "Record Guide" text.
     /// Replaces what a previous run added; run it again after adding
     /// something to the scene that the tutorial shouldn't show, or edit the
@@ -119,8 +120,9 @@ namespace SkeletonMaker
             if (quad != null) buildObjects.Add(quad.gameObject);
             var knob = Object.FindFirstObjectByType<SmoothingKnob>(FindObjectsInactive.Include);
             if (knob != null) buildObjects.Add(knob.gameObject);
+            var combineButtons = Object.FindObjectsByType<CombineButton>(FindObjectsInactive.Include, FindObjectsSortMode.None);
             foreach (var button in Object.FindObjectsByType<PushButton>(FindObjectsInactive.Include, FindObjectsSortMode.None))
-                buildObjects.Add(button.gameObject);
+                if (!(button is CombineButton)) buildObjects.Add(button.gameObject);
 
             // A slot that's switched off never spawns its shape, so the table
             // starts with just the tutorial's two and fills up when Build begins.
@@ -154,6 +156,16 @@ namespace SkeletonMaker
             foreach (var button in Object.FindObjectsByType<ModeButton>(FindObjectsInactive.Include, FindObjectsSortMode.None))
                 joinObjects.Add(button.gameObject);
 
+            // Together Math: Join, plus the buttons that choose how the two avatars are combined.
+            // None yet: no such stage, and "next" skips it.
+            var togetherMathObjects = new List<GameObject>();
+            if (combineButtons.Length > 0)
+            {
+                togetherMathObjects.AddRange(joinObjects);
+                foreach (var button in combineButtons) togetherMathObjects.Add(button.gameObject);
+            }
+            SameStagesAsJoin();
+
             var recordObjects = new List<GameObject>();
             foreach (string name in RecordObjectNames)
             {
@@ -169,6 +181,7 @@ namespace SkeletonMaker
             SetObjects(so.FindProperty("buildObjects"), buildObjects);
             SetObjects(so.FindProperty("mathObjects"), mathObjects);
             SetObjects(so.FindProperty("joinObjects"), joinObjects);
+            SetObjects(so.FindProperty("togetherMathObjects"), togetherMathObjects);
             SetObjects(so.FindProperty("recordObjects"), recordObjects);
             so.ApplyModifiedProperties();
 
@@ -182,7 +195,36 @@ namespace SkeletonMaker
 
             EditorSceneManager.MarkSceneDirty(controller.gameObject.scene);
             Debug.Log($"Stages: the tutorial keeps {tutorialSlots} table slot(s); {buildObjects.Count} object(s) wait for the Build stage, " +
-                      $"{mathObjects.Count} for Math, {joinObjects.Count} for Join, {recordObjects.Count} for Record.");
+                      $"{mathObjects.Count} for Math, {joinObjects.Count} for Join, {togetherMathObjects.Count} for Together Math, " +
+                      $"{recordObjects.Count} for Record.");
+        }
+
+        // Together Math is Join with buttons: whatever a component does in Join
+        // (no loose shapes, the other performer there, the quad on the head) it
+        // does in Together Math too. These lists are saved in the scene, so one
+        // from before the stage existed has to be told.
+        private static void SameStagesAsJoin()
+        {
+            foreach (var behaviour in Object.FindObjectsByType<MonoBehaviour>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            {
+                if (!(behaviour is LooseShapes || behaviour is BodyReceiver || behaviour is RaymarchQuadGrab)) continue;
+
+                var so = new SerializedObject(behaviour);
+                string listName = behaviour is LooseShapes ? "hiddenIn" : behaviour is BodyReceiver ? "stagesShown" : "headStages";
+                var list = so.FindProperty(listName);
+                bool join = false, together = false;
+                for (int i = 0; i < list.arraySize; i++)
+                {
+                    int stage = list.GetArrayElementAtIndex(i).intValue;
+                    join |= stage == (int)Stage.Join;
+                    together |= stage == (int)Stage.TogetherMath;
+                }
+                if (!join || together) continue;
+
+                list.arraySize++;
+                list.GetArrayElementAtIndex(list.arraySize - 1).intValue = (int)Stage.TogetherMath;
+                so.ApplyModifiedProperties();
+            }
         }
 
         // GameObject.Find only sees what is switched on.

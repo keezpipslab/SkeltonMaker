@@ -57,13 +57,19 @@ Shader "SkeletonMaker/RaymarchQuad"
             #define KIND_TRIPRISM 10
             #define KIND_LINK 11
 
+            // Order matches SkeletonMaker.CombineMode.
+            #define COMBINE_UNION 0
+            #define COMBINE_SUBTRACT_A 1
+            #define COMBINE_SUBTRACT_B 2
+            #define COMBINE_INTERSECT 3
+
             float _ClipBackground;
             float _StartAtSurface;
 
             // --- per-frame data from RaymarchQuad ---
             int _RMQ_ShapeCount;
             float4x4 _RMQ_ShapeWorldToLocal[MAX_SHAPES]; // world -> the shape's native mesh space
-            float4 _RMQ_ShapeParams[MAX_SHAPES];         // x = kind, y = mesh->world distance scale
+            float4 _RMQ_ShapeParams[MAX_SHAPES];         // x = kind, y = mesh->world distance scale, z = group (0 = A, 1 = B)
             float4 _RMQ_ShapeBounds[MAX_SHAPES];         // xyz = world center, w = world radius
             float4 _RMQ_ShapeColors[MAX_SHAPES];
             float4 _RMQ_SceneBounds;                     // bounding sphere around every shape
@@ -71,6 +77,7 @@ Shader "SkeletonMaker/RaymarchQuad"
             int _RMQ_MaxSteps;
             float _RMQ_Smoothing;
             float _RMQ_Inflate;                          // subtracted from the scene distance (d - c)
+            int _RMQ_Combine;                            // how groups A and B are put together, see COMBINE_*
             float _RMQ_Repeat;                           // spacing of the repeated copies across the floor, 0 = off
             float _RMQ_RepeatDistance;                   // how far the repeated copies are drawn
             float3 _RMQ_LightDir;                        // world, pointing toward the light
@@ -238,6 +245,18 @@ Shader "SkeletonMaker/RaymarchQuad"
                 return float2(lerp(a, b, h) - k * h * (1.0 - h), h);
             }
 
+            // max(a, b), rounded off over k like SmoothMin; returns (distance,
+            // blend factor toward b). Where either side is still the 1e5
+            // "nothing there" sentinel the plain max is taken, for the reason
+            // given in SmoothMin.
+            float2 SmoothMax(float a, float b, float k)
+            {
+                if (k <= 0.0 || abs(a) >= 1e4 || abs(b) >= 1e4) return a > b ? float2(a, 0.0) : float2(b, 1.0);
+
+                float h = saturate(0.5 + 0.5 * (b - a) / k);
+                return float2(lerp(a, b, h) + k * h * (1.0 - h), h);
+            }
+
             // mod(p): wraps space around every _RMQ_Repeat meters across the
             // floor (XZ), so the one set of shapes is met again in every cell.
             // Centred on the middle of the shapes, which keeps the real ones
@@ -292,10 +311,75 @@ Shader "SkeletonMaker/RaymarchQuad"
                 return best - _RMQ_Inflate;
             }
 
+            // The same scene as two bodies, A and B, each the smooth union of
+            // its own shapes, put together afterwards: min(a, b) is both,
+            // max(a, b) only where they overlap, and max(a, -b) is A with B
+            // carved out of it (-b is B turned inside out).
+            float CombinedSDF(float3 p, out float3 color)
+            {
+                p = Fold(p);
+                float bestA = 1e5, bestB = 1e5;
+                float3 colorA = float3(0, 0, 0), colorB = float3(0, 0, 0);
+                float k = _RMQ_Smoothing;
+
+                [loop]
+                for (int i = 0; i < _RMQ_ShapeCount; i++)
+                {
+                    bool inB = _RMQ_ShapeParams[i].z > 0.5;
+                    float best = inB ? bestB : bestA;
+
+                    // Cheap reject, as in SceneSDF, against this shape's own body.
+                    float4 bounds = _RMQ_ShapeBounds[i];
+                    if (length(p - bounds.xyz) - bounds.w > best + k) continue;
+
+                    float3 local = mul(_RMQ_ShapeWorldToLocal[i], float4(p, 1.0)).xyz;
+                    float d = ShapeSDF(local, (int)_RMQ_ShapeParams[i].x) * _RMQ_ShapeParams[i].y;
+
+                    float2 m = SmoothMin(best, d, k);
+                    if (inB)
+                    {
+                        colorB = lerp(colorB, _RMQ_ShapeColors[i].rgb, m.y);
+                        bestB = m.x;
+                    }
+                    else
+                    {
+                        colorA = lerp(colorA, _RMQ_ShapeColors[i].rgb, m.y);
+                        bestA = m.x;
+                    }
+                }
+
+                float2 both;
+                if (_RMQ_Combine == COMBINE_INTERSECT)
+                {
+                    both = SmoothMax(bestA, bestB, k);
+                    color = lerp(colorA, colorB, both.y);
+                }
+                else if (_RMQ_Combine == COMBINE_SUBTRACT_A)
+                {
+                    // What is left is all B's, the walls of the hole too.
+                    both = SmoothMax(bestB, -bestA, k);
+                    color = colorB;
+                }
+                else
+                {
+                    both = SmoothMax(bestA, -bestB, k);
+                    color = colorA;
+                }
+                return both.x - _RMQ_Inflate;
+            }
+
+            float SceneDistAndColor(float3 p, out float3 color)
+            {
+                float d;
+                if (_RMQ_Combine == COMBINE_UNION) d = SceneSDF(p, color);
+                else d = CombinedSDF(p, color);
+                return d;
+            }
+
             float SceneDist(float3 p)
             {
                 float3 unused;
-                return SceneSDF(p, unused);
+                return SceneDistAndColor(p, unused);
             }
 
             // Tetrahedral normal: 4 scene evaluations instead of 6.
@@ -470,7 +554,7 @@ Shader "SkeletonMaker/RaymarchQuad"
 
                 float3 p = eye + rd * t;
                 float3 albedo;
-                SceneSDF(p, albedo);
+                SceneDistAndColor(p, albedo);
                 float3 n = EstimateNormal(p);
                 float3 l = normalize(_RMQ_LightDir);
 

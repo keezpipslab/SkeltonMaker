@@ -11,6 +11,7 @@ namespace SkeletonMaker
         Math,
         Join,
         Record,
+        TogetherMath, // comes after Join; listed last so the stages saved in the scene keep their numbers
     }
 
     /// <summary>
@@ -23,9 +24,10 @@ namespace SkeletonMaker
     /// and moving on is instant.
     ///
     /// B on the right controller (or Enter) moves on: out of the tutorial
-    /// into Build, then round Build, Math and Join (where the other performer
-    /// appears). Record is hidden: H goes there from anywhere and back again,
-    /// and "next" never passes through it.
+    /// into Build, then round Build, Math, Join (where the other performer
+    /// appears) and Together Math (Join, plus the buttons that choose how the
+    /// two avatars are combined). Record is hidden: H goes there from anywhere
+    /// and back again, and "next" never passes through it.
     /// </summary>
     [DefaultExecutionOrder(-100)] // before anything it switches off gets to wake up
     public class StageController : MonoBehaviour
@@ -39,6 +41,7 @@ namespace SkeletonMaker
         [SerializeField] private GameObject[] buildObjects;
         [SerializeField] private GameObject[] mathObjects;
         [SerializeField] private GameObject[] joinObjects;
+        [SerializeField] private GameObject[] togetherMathObjects;
         [SerializeField] private GameObject[] recordObjects;
 
         public Stage Current { get; private set; }
@@ -82,9 +85,9 @@ namespace SkeletonMaker
             if (keyboard != null && keyboard.hKey.wasPressedThisFrame) ToggleRecord();
         }
 
-        /// <summary>Tutorial -> Build -> Math -> Join -> Build ... (leaving out
-        /// a stage that hasn't been set up), and out of Record back to where
-        /// it was entered from.</summary>
+        /// <summary>Tutorial -> Build -> Math -> Join -> Together Math -> Build ...
+        /// (leaving out a stage that hasn't been set up), and out of Record
+        /// back to where it was entered from.</summary>
         public void Next()
         {
             switch (Current)
@@ -92,6 +95,7 @@ namespace SkeletonMaker
                 case Stage.Record: Go(beforeRecord); break;
                 case Stage.Build: Go(Has(mathObjects) ? Stage.Math : Has(joinObjects) ? Stage.Join : Stage.Build); break;
                 case Stage.Math: Go(Has(joinObjects) ? Stage.Join : Stage.Build); break;
+                case Stage.Join: Go(Has(togetherMathObjects) ? Stage.TogetherMath : Stage.Build); break;
                 default: Go(Stage.Build); break;
             }
         }
@@ -144,6 +148,7 @@ namespace SkeletonMaker
                 case Stage.Build: objects = buildObjects; break;
                 case Stage.Math: objects = mathObjects; break;
                 case Stage.Join: objects = joinObjects; break;
+                case Stage.TogetherMath: objects = togetherMathObjects; break;
                 default: objects = recordObjects; break;
             }
             return objects ?? Array.Empty<GameObject>();

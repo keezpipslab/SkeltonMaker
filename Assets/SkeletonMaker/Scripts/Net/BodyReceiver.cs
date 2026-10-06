@@ -28,7 +28,7 @@ namespace SkeletonMaker
         [SerializeField] private Vector3 echoShift = new Vector3(0f, 0f, 1.5f);
 
         [Tooltip("The stages other performers are shown in. Everywhere, if there is no StageController.")]
-        [SerializeField] private Stage[] stagesShown = { Stage.Join, Stage.Record };
+        [SerializeField] private Stage[] stagesShown = { Stage.Join, Stage.TogetherMath, Stage.Record };
 
         private readonly Dictionary<int, RemoteSkeleton> skeletons = new Dictionary<int, RemoteSkeleton>();
         private readonly List<int> gone = new List<int>();
@@ -92,7 +92,7 @@ namespace SkeletonMaker
             skeleton.Build(rig != null ? rig.LineWidth : 0.012f, rig != null ? rig.LineMaterial : null, color);
 
             if (quad == null) quad = FindFirstObjectByType<RaymarchQuad>(FindObjectsInactive.Include);
-            if (quad != null) quad.AddSource($"Remote {id}", skeleton.Body, color);
+            if (quad != null) quad.AddSource($"Remote {id}", skeleton.Body, color, ShapeGroup.B);
 
             Debug.Log($"BodyReceiver: performer {id} is on the stage.", this);
             return skeleton;

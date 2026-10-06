@@ -13,7 +13,7 @@ namespace SkeletonMaker
     public class LooseShapes : MonoBehaviour
     {
         [Tooltip("The stages without loose shapes.")]
-        [SerializeField] private Stage[] hiddenIn = { Stage.Join };
+        [SerializeField] private Stage[] hiddenIn = { Stage.Join, Stage.TogetherMath };
 
         private StageController stages;
         private int pending;

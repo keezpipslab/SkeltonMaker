@@ -10,10 +10,13 @@ namespace SkeletonMaker
     /// smoothing knob, "Finished Button" (on to the Join stage) beside it,
     /// under where the math stage's dial is, and in a row above the dials the
     /// three that choose what the avatar follows: "Still Button", "Animation
-    /// Button" and "You Button". Each is the size of a dial and wired to both
-    /// hands' triggers, and all are put in the stages. A button that's
-    /// already there is left where it is, and only wired again. Needs the
-    /// Smoothing Knob.
+    /// Button" and "You Button". For the Together Math stage, a row of four
+    /// that choose how the two avatars are combined: "Union Button", "Subtract
+    /// A Button", "Subtract B Button" and "Intersect Button", where Mirror
+    /// and Finished are in the other stages. Each is the size of a dial and
+    /// wired to both hands' triggers, and all are put in the stages. A button
+    /// that's already there is left where it is, and only wired again. Needs
+    /// the Smoothing Knob.
     /// </summary>
     public static class ButtonsMenu
     {
@@ -24,6 +27,12 @@ namespace SkeletonMaker
         private static readonly (string name, AvatarMode mode)[] Modes =
         {
             ("Still Button", AvatarMode.Still), ("Animation Button", AvatarMode.Animation), ("You Button", AvatarMode.Tracking),
+        };
+
+        private static readonly (string name, CombineMode mode)[] Combines =
+        {
+            ("Union Button", CombineMode.Union), ("Subtract A Button", CombineMode.SubtractA),
+            ("Subtract B Button", CombineMode.SubtractB), ("Intersect Button", CombineMode.Intersect),
         };
 
         [MenuItem("SkeletonMaker/Add Buttons")]
@@ -48,6 +57,17 @@ namespace SkeletonMaker
 
             var finished = Object.FindFirstObjectByType<FinishedButton>(FindObjectsInactive.Include);
             if (finished == null) finished = BuildButton<FinishedButton>("Finished Button", under + side * Beside, dial.rotation);
+
+            // The Together Math stage's row takes the place of these two, which aren't there in that stage.
+            var combineButtons = Object.FindObjectsByType<CombineButton>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            for (int i = 0; i < Combines.Length; i++)
+            {
+                if (System.Array.Exists(combineButtons, b => CombineOf(b) == Combines[i].mode)) continue;
+                var button = BuildButton<CombineButton>(Combines[i].name, under + side * (Beside * i), dial.rotation);
+                var soCombine = new SerializedObject(button);
+                soCombine.FindProperty("mode").enumValueIndex = (int)Combines[i].mode;
+                soCombine.ApplyModifiedPropertiesWithoutUndo();
+            }
 
             var modeButtons = Object.FindObjectsByType<ModeButton>(FindObjectsInactive.Include, FindObjectsSortMode.None);
             for (int i = 0; i < Modes.Length; i++)
@@ -75,10 +95,13 @@ namespace SkeletonMaker
             EditorSceneManager.MarkSceneDirty(mirror.gameObject.scene);
         }
 
+        private static CombineMode CombineOf(CombineButton button) =>
+            (CombineMode)new SerializedObject(button).FindProperty("mode").enumValueIndex;
+
         private static AvatarMode ModeOf(ModeButton button) =>
             (AvatarMode)new SerializedObject(button).FindProperty("mode").enumValueIndex;
 
-        private static T BuildButton<T>(string name, Vector3 position, Quaternion rotation) where T : PushButton
+        internal static T BuildButton<T>(string name, Vector3 position, Quaternion rotation) where T : PushButton
         {
             var root = new GameObject(name);
             Undo.RegisterCreatedObjectUndo(root, "Add " + name);

@@ -6,8 +6,8 @@ namespace SkeletonMaker
 {
     /// <summary>
     /// A flat cube the size of a dial that does one thing when pressed - what,
-    /// is up to the subclass (MirrorToggle, FinishedButton, ModeButton). It is
-    /// pressed with the trigger: pull a hand's trigger while that hand is at
+    /// is up to the subclass (MirrorToggle, FinishedButton, ModeButton,
+    /// CombineButton). It is pressed with the trigger: pull a hand's trigger while that hand is at
     /// the cube (the grip is for picking things up and turning the dials).
     /// The cube sinks in for as long as the trigger is held, and is lit while
     /// Lit says so, which is how a toggle shows that it's on. Its caption is
@@ -85,7 +85,7 @@ namespace SkeletonMaker
             }
         }
 
-        private void OnDisable()
+        protected virtual void OnDisable()
         {
             if (hands != null)
             {

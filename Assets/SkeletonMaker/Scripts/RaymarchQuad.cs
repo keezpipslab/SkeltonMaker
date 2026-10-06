@@ -6,6 +6,22 @@ using UnityEngine.Rendering;
 
 namespace SkeletonMaker
 {
+    /// <summary>Which of the two bodies a RaymarchQuad combines a shape belongs to.</summary>
+    public enum ShapeGroup
+    {
+        A, // this performer's avatar, and everything else that is local
+        B, // the other performers
+    }
+
+    /// <summary>How a RaymarchQuad puts group A and group B together.</summary>
+    public enum CombineMode
+    {
+        Union,     // both, merging where they touch
+        SubtractA, // B with A carved out of it
+        SubtractB, // A with B carved out of it
+        Intersect, // only where A and B overlap
+    }
+
     /// <summary>
     /// Shows the primitives placed under one or more skeleton roots as a
     /// single smooth raymarched (SDF) surface, drawn only inside this quad -
@@ -44,6 +60,9 @@ namespace SkeletonMaker
 
             [Tooltip("Included when ToggleContext() runs (e.g. from the left controller's primary button), as one combined on/off group with 'Show Table' instead of its own separate control.")]
             public bool includeInContextToggle;
+
+            [Tooltip("Which side of Combine this source's shapes are on. BodyReceiver puts the other performers in B.")]
+            public ShapeGroup group;
         }
 
         [Tooltip("Where shapes are gathered from. Toggle 'visible' at runtime (Inspector, or ToggleSource()/SetSourceVisible() from code) to show/hide a whole skeleton's shapes. Shared cap of MaxShapes across all sources, first come first served.")]
@@ -74,6 +93,9 @@ namespace SkeletonMaker
         [Range(-0.15f, 0.15f)]
         [Tooltip("Subtracted from the distance to the surface everywhere (meters): above 0 the whole surface moves outward, below 0 inward. Driven at runtime by the InflateKnob.")]
         public float inflate;
+
+        [Tooltip("How the shapes of group A (this performer's) and group B (the other performers') are put together. Driven at runtime by the CombineButtons.")]
+        public CombineMode combine;
 
         [Min(0f)]
         [Tooltip("Wraps space around every this many meters across the floor, so everything shows up again and again. 0 = off. Anything further than half of this from the middle of the shapes gets cut off. Driven at runtime by the RepeatKnob.")]
@@ -117,6 +139,7 @@ namespace SkeletonMaker
         private static readonly int MaxStepsId = Shader.PropertyToID("_RMQ_MaxSteps");
         private static readonly int SmoothingId = Shader.PropertyToID("_RMQ_Smoothing");
         private static readonly int InflateId = Shader.PropertyToID("_RMQ_Inflate");
+        private static readonly int CombineId = Shader.PropertyToID("_RMQ_Combine");
         private static readonly int RepeatId = Shader.PropertyToID("_RMQ_Repeat");
         private static readonly int RepeatDistanceId = Shader.PropertyToID("_RMQ_RepeatDistance");
         private static readonly int LightDirId =Shader.PropertyToID("_RMQ_LightDir");
@@ -167,11 +190,11 @@ namespace SkeletonMaker
         }
 
         /// <summary>Adds a skeleton that only exists at runtime (a remote performer's).</summary>
-        public void AddSource(string label, Transform root, Color color)
+        public void AddSource(string label, Transform root, Color color, ShapeGroup group = ShapeGroup.A)
         {
             foreach (var source in sources)
                 if (source != null && source.root == root) return;
-            sources.Add(new ShapeSource { label = label, root = root, color = color });
+            sources.Add(new ShapeSource { label = label, root = root, color = color, group = group });
         }
 
         public void RemoveSource(Transform root) => sources.RemoveAll(source => source != null && source.root == root);
@@ -236,6 +259,7 @@ namespace SkeletonMaker
             _block.SetInteger(MaxStepsId, maxSteps);
             _block.SetFloat(SmoothingId, smoothing);
             _block.SetFloat(InflateId, inflate);
+            _block.SetInteger(CombineId, (int)combine);
             _block.SetFloat(RepeatId, repeat);
             _block.SetFloat(RepeatDistanceId, repeatDistance);
 
@@ -269,7 +293,7 @@ namespace SkeletonMaker
                 if (!source.root.gameObject.activeInHierarchy) continue; // a switched-off source (e.g. another stage's) shows nothing
                 source.root.GetComponentsInChildren(false, _filters);
                 foreach (var filter in _filters)
-                    TryAddShape(filter, source.color, ref count, ref min, ref max);
+                    TryAddShape(filter, source.color, ref count, ref min, ref max, source.group);
             }
 
             if (showHeld)
@@ -320,7 +344,7 @@ namespace SkeletonMaker
             return count;
         }
 
-        private void TryAddShape(MeshFilter filter, Color color, ref int count, ref Vector3 min, ref Vector3 max)
+        private void TryAddShape(MeshFilter filter, Color color, ref int count, ref Vector3 min, ref Vector3 max, ShapeGroup group = ShapeGroup.A)
         {
             if (count >= MaxShapes) return;
             if (filter.name != "Visual" || !TryGetKind(filter, out PrimitiveKind kind)) return;
@@ -339,7 +363,7 @@ namespace SkeletonMaker
             float radius = NativeBoundRadius[(int)kind] * Mathf.Max(sx, Mathf.Max(sy, sz));
 
             _worldToLocal[count] = visual.worldToLocalMatrix;
-            _params[count] = new Vector4((int)kind, minScale, 0f, 0f);
+            _params[count] = new Vector4((int)kind, minScale, (int)group, 0f);
             _bounds[count] = new Vector4(center.x, center.y, center.z, radius);
             _colors[count] = color.linear;
 

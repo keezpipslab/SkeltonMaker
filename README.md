@@ -45,7 +45,7 @@ Open scene: `Assets/SkeletonMaker/Scenes/SkeletonBuilder.unity`
 - **Mirror**: the **Mirror** button beside the dials (or the **M** key) switches mirror placement
   on and off; while it's lit, a shape placed on one side of the body is also placed on the other.
 
-## Stages (tutorial, build, math, join - and a hidden one to record in)
+## Stages (tutorial, build, math, join, together math - and a hidden one to record in)
 
 The scene is one Unity scene split into stages by `StageController` (on the `Stages` object), which
 switches whole objects on and off: an object listed under a stage is active only while a stage
@@ -104,6 +104,20 @@ listing it is current, and anything listed nowhere (XR rig, table, managers) is 
   old mode back afterwards. With nobody on the other end (the `OscLink`'s Remote Host is this PC)
   the other performer is your own recording, or the dancing fake peer until you have made one -
   see `TestPartner` below.
+- **Together Math** - Join, plus a row of four buttons (`CombineButton`, `RaymarchQuad.combine`)
+  under the smoothing knob that choose how the raymarch quad puts the two avatars together. **A**
+  is your own avatar, **B** the other performer's (every source `BodyReceiver` adds is in group B;
+  everything else is A - `ShapeSource.group`). Each body is first the smooth union of its own
+  shapes, `a` and `b`:
+  - **Union** (the default): `min(a, b)` - both, merging where they touch.
+  - **Subtract A**: `max(b, -a)` - A carved out of B: B with an A-shaped hole, in B's colors.
+  - **Subtract B**: `max(a, -b)` - B carved out of A: A with a B-shaped hole, in A's colors.
+  - **Intersect**: `max(a, b)` - only where A and B overlap.
+
+  The smoothing knob rounds these off just as it does the union. Only the raymarched view changes;
+  the line skeletons stay whole. With nobody in B, Subtract A and Intersect show nothing. The quad
+  goes back to Union when the stage is left. The partner from Join (the other performer, your
+  recording or the fake peer) carries on, and the quad stays on your head.
 - **Record** (hidden) - **H** goes there from any stage, and **H** or **B** goes back to where you
   were. It shows the skeleton, the avatar, the quad and a text, puts the avatar in Tracking mode,
   and plays the saved recording so you can check it. **A** on the right controller (or **R**)
@@ -113,17 +127,19 @@ listing it is current, and anything listed nowhere (XR rig, table, managers) is 
   twice) is thrown away and the saved one kept.
 
 **B** on the right controller (or Enter) is "next stage": out of the tutorial into Build, then
-round Build, Math and Join. The **Finished** button goes straight to Join.
+round Build, Math, Join and Together Math. The **Finished** button goes straight to Join.
 `StageController.Instance.Go(stage)` / `Next()` / `ToggleRecord()` do it from code. Set **Start
 Stage** on the `Stages` object to skip ahead while working on one stage. Run Add Stages again after
 adding something to the scene the tutorial shouldn't show (or edit the lists by hand).
 
 ### Buttons
 
-`SkeletonMaker > Add Buttons` builds five flat cubes the size of a dial, around the dials:
+`SkeletonMaker > Add Buttons` builds nine flat cubes the size of a dial, around the dials:
 **Mirror** (`MirrorToggle`, lit while mirror placement is on) under the smoothing knob, **Finished**
 (`FinishedButton`, on to Join) beside it, and in a row above the dials **Still**, **Animation** and
-**You** (`ModeButton`), which choose what the avatar follows; the current one is lit. Buttons are
+**You** (`ModeButton`), which choose what the avatar follows; the current one is lit. The Together
+Math stage's **Union**, **Subtract A**, **Subtract B** and **Intersect** (`CombineButton`) are a row
+starting where Mirror is, which like Finished is not there in that stage. Buttons are
 pressed with the **trigger**: pull either trigger while that hand is at the cube (`PushButton`;
 within 8 cm). The grip stays for picking things up and turning the dials. Move the objects to put
 them elsewhere; the menu leaves a button that's already there where it is.
@@ -548,7 +564,7 @@ elements of the `state`'s revision have arrived.
 
 Leave **Remote Host** on 127.0.0.1 so everything sent comes straight back in.
 
-Other performers only show in the Join and Record stages.
+Other performers only show in the Join, Together Math and Record stages.
 
 1. **Record and replay**: H, then A (or R) to record yourself and A again to save. From then on
    that recording is who you meet in Join.
