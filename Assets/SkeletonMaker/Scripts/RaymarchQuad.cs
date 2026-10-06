@@ -51,7 +51,7 @@ namespace SkeletonMaker
 
         [Tooltip("Also draw the primitive currently held in a hand (it is not under any source root).")]
         public bool showHeld = true;
-        public Color heldColor = new Color(1f, 0.85f, 0.4f);
+        public Color heldColor = new Color(0.6f, 0.6f, 0.62f);
 
         [Tooltip("Also draw every spawned primitive that is not yet placed on a skeleton and not currently held - i.e. still sitting on the table. Toggled together with every source whose 'Include In Context Toggle' is set by ToggleContext() (wire a controller button to it, or call it directly).")]
         public bool showTable = true;
@@ -60,12 +60,6 @@ namespace SkeletonMaker
         [Tooltip("Left controller button that calls ToggleContext() - hides/shows Show Table plus every source marked Include In Context Toggle (e.g. the static main skeleton), so you can declutter down to just the dancer.")]
         [SerializeField] private InputActionReference contextToggleAction;
 
-        [Header("Left Thumbstick - Smoothing")]
-        [Tooltip("Left thumbstick's vertical axis raises/lowers Smoothing over time (push up to smooth more, down to sharpen towards a hard union).")]
-        [SerializeField] private InputActionReference smoothingThumbstick;
-        [SerializeField] private float smoothingAdjustSpeed = 0.15f; // smoothing units/sec at full deflection
-        [SerializeField] private float smoothingDeadzone = 0.15f;
-
         [Header("Quality")]
         [Range(8, 128)]
         [Tooltip("Max sphere-tracing steps per ray. Lower = cheaper, but grazing edges and thin gaps may break up.")]
@@ -73,9 +67,23 @@ namespace SkeletonMaker
 
         [Header("Look")]
         [Range(0f, 0.3f)]
-        [Tooltip("Blend radius between shapes (meters). 0 = hard union.")]
+        [Tooltip("Blend radius between shapes (meters). 0 = hard union. Driven at runtime by the SmoothingKnob.")]
         public float smoothing = 0.03f;
 
+        [Header("Math")]
+        [Range(-0.15f, 0.15f)]
+        [Tooltip("Subtracted from the distance to the surface everywhere (meters): above 0 the whole surface moves outward, below 0 inward. Driven at runtime by the InflateKnob.")]
+        public float inflate;
+
+        [Min(0f)]
+        [Tooltip("Wraps space around every this many meters across the floor, so everything shows up again and again. 0 = off. Anything further than half of this from the middle of the shapes gets cut off. Driven at runtime by the RepeatKnob.")]
+        public float repeat;
+
+        [Min(1f)]
+        [Tooltip("How far away (meters) the repeated copies are still drawn; they fade into the background toward it. Lower = cheaper.")]
+        public float repeatDistance = 20f;
+
+        [Header("Light")]
         [Tooltip("Light direction/color source. Falls back to RenderSettings.sun, then to a fixed overhead direction.")]
         public Light sun;
         public Color lightColor = Color.white;
@@ -94,6 +102,9 @@ namespace SkeletonMaker
         [Tooltip("Color where a ray misses every shape (unless the material's Clip Background is on).")]
         public Color backgroundColor = new Color(0.08f, 0.08f, 0.1f);
 
+        [Tooltip("Draw only the shapes and leave the rest of the quad empty, as the material's Clip Background does. Switched on by PassthroughView while the real room is shown.")]
+        public bool clipBackground;
+
         /// <summary>How many shapes were sent to the shader last frame.</summary>
         public int ShapeCount { get; private set; }
 
@@ -105,7 +116,10 @@ namespace SkeletonMaker
         private static readonly int SceneBoundsId = Shader.PropertyToID("_RMQ_SceneBounds");
         private static readonly int MaxStepsId = Shader.PropertyToID("_RMQ_MaxSteps");
         private static readonly int SmoothingId = Shader.PropertyToID("_RMQ_Smoothing");
-        private static readonly int LightDirId = Shader.PropertyToID("_RMQ_LightDir");
+        private static readonly int InflateId = Shader.PropertyToID("_RMQ_Inflate");
+        private static readonly int RepeatId = Shader.PropertyToID("_RMQ_Repeat");
+        private static readonly int RepeatDistanceId = Shader.PropertyToID("_RMQ_RepeatDistance");
+        private static readonly int LightDirId =Shader.PropertyToID("_RMQ_LightDir");
         private static readonly int LightColorId = Shader.PropertyToID("_RMQ_LightColor");
         private static readonly int AmbientId = Shader.PropertyToID("_RMQ_Ambient");
         private static readonly int SpecularId = Shader.PropertyToID("_RMQ_Specular");
@@ -113,6 +127,7 @@ namespace SkeletonMaker
         private static readonly int ShadowStrengthId = Shader.PropertyToID("_RMQ_ShadowStrength");
         private static readonly int OcclusionStrengthId = Shader.PropertyToID("_RMQ_OcclusionStrength");
         private static readonly int BackgroundColorId = Shader.PropertyToID("_RMQ_BackgroundColor");
+        private static readonly int ClipBackgroundId = Shader.PropertyToID("_ClipBackground");
 
         // Bounding-sphere radius of each kind's native mesh (see the matching
         // SDFs in RaymarchQuad.shader), indexed by PrimitiveKind.
@@ -151,6 +166,16 @@ namespace SkeletonMaker
             if (index >= 0 && index < sources.Count) sources[index].visible = !sources[index].visible;
         }
 
+        /// <summary>Adds a skeleton that only exists at runtime (a remote performer's).</summary>
+        public void AddSource(string label, Transform root, Color color)
+        {
+            foreach (var source in sources)
+                if (source != null && source.root == root) return;
+            sources.Add(new ShapeSource { label = label, root = root, color = color });
+        }
+
+        public void RemoveSource(Transform root) => sources.RemoveAll(source => source != null && source.root == root);
+
         /// <summary>Flips Show Table and every source marked Include In Context Toggle together, as one on/off group.</summary>
         public void ToggleContext()
         {
@@ -171,7 +196,6 @@ namespace SkeletonMaker
                 contextToggleAction.action.Enable();
                 contextToggleAction.action.performed += OnContextTogglePerformed;
             }
-            if (smoothingThumbstick != null) smoothingThumbstick.action.Enable();
         }
 
         private void OnDisable()
@@ -182,19 +206,13 @@ namespace SkeletonMaker
 
         private void OnContextTogglePerformed(InputAction.CallbackContext ctx) => ToggleContext();
 
-        private void Update()
-        {
-            if (smoothingThumbstick == null) return;
-            float y = smoothingThumbstick.action.ReadValue<Vector2>().y;
-            if (Mathf.Abs(y) < smoothingDeadzone) return;
-            smoothing = Mathf.Clamp(smoothing + y * smoothingAdjustSpeed * Time.deltaTime, 0f, 0.3f);
-        }
-
         private void OnBeginContextRendering(ScriptableRenderContext context, List<Camera> cameras)
         {
             if (_renderer == null) return;
 
             int count = GatherShapes(out Vector4 sceneBounds);
+            if (count >= MaxShapes && ShapeCount < MaxShapes)
+                Debug.LogWarning($"RaymarchQuad: all {MaxShapes} shape slots are in use, anything beyond that is not drawn.", this);
             ShapeCount = count;
 
             // Unused slots: identity + a far-away zero-radius bound, never reached
@@ -217,6 +235,9 @@ namespace SkeletonMaker
 
             _block.SetInteger(MaxStepsId, maxSteps);
             _block.SetFloat(SmoothingId, smoothing);
+            _block.SetFloat(InflateId, inflate);
+            _block.SetFloat(RepeatId, repeat);
+            _block.SetFloat(RepeatDistanceId, repeatDistance);
 
             Light light = sun != null ? sun : RenderSettings.sun;
             Vector3 toLight = light != null ? -light.transform.forward : new Vector3(0.3f, 1f, -0.4f).normalized;
@@ -230,6 +251,10 @@ namespace SkeletonMaker
             _block.SetFloat(ShadowStrengthId, shadowStrength);
             _block.SetFloat(OcclusionStrengthId, occlusionStrength);
             _block.SetColor(BackgroundColorId, backgroundColor);
+
+            var material = _renderer.sharedMaterial;
+            bool clip = clipBackground || (material != null && material.GetFloat(ClipBackgroundId) > 0.5f);
+            _block.SetFloat(ClipBackgroundId, clip ? 1f : 0f);
             _renderer.SetPropertyBlock(_block);
         }
 
@@ -241,6 +266,7 @@ namespace SkeletonMaker
             foreach (var source in sources)
             {
                 if (source == null || !source.visible || source.root == null) continue;
+                if (!source.root.gameObject.activeInHierarchy) continue; // a switched-off source (e.g. another stage's) shows nothing
                 source.root.GetComponentsInChildren(false, _filters);
                 foreach (var filter in _filters)
                     TryAddShape(filter, source.color, ref count, ref min, ref max);
@@ -290,7 +316,7 @@ namespace SkeletonMaker
                 Vector3 c = _bounds[i];
                 sceneRadius = Mathf.Max(sceneRadius, Vector3.Distance(c, sceneCenter) + _bounds[i].w);
             }
-            sceneBounds = new Vector4(sceneCenter.x, sceneCenter.y, sceneCenter.z, sceneRadius + smoothing);
+            sceneBounds = new Vector4(sceneCenter.x, sceneCenter.y, sceneCenter.z, sceneRadius + smoothing + Mathf.Max(inflate, 0f));
             return count;
         }
 
@@ -300,6 +326,10 @@ namespace SkeletonMaker
             if (filter.name != "Visual" || !TryGetKind(filter, out PrimitiveKind kind)) return;
 
             Transform visual = filter.transform;
+
+            // A painted element shows its own color instead of its group's.
+            if (visual.parent != null && visual.parent.TryGetComponent(out ElementColor own)) color = own.Color;
+
             Vector3 scale = visual.lossyScale;
             float sx = Mathf.Abs(scale.x), sy = Mathf.Abs(scale.y), sz = Mathf.Abs(scale.z);
             float minScale = Mathf.Min(sx, Mathf.Min(sy, sz));

@@ -4,9 +4,10 @@ using UnityEngine.InputSystem;
 namespace SkeletonMaker
 {
     /// <summary>
-    /// While the element is held, the left stick's vertical axis scales all
-    /// 3 dimensions together (uniform); the remaining 3 stick axes (left
-    /// stick X, right stick X and Y) each drive one dimension independently.
+    /// While the element is held, the right stick's vertical axis scales all
+    /// 3 dimensions together (uniform); the remaining 3 stick axes each
+    /// drive one dimension independently: left stick up/down the height,
+    /// left stick sideways the width, right stick sideways the depth.
     /// </summary>
     [RequireComponent(typeof(Grabbable), typeof(RaymarchableElement))]
     public class HeldElementScaler : MonoBehaviour
@@ -40,14 +41,14 @@ namespace SkeletonMaker
             // than add the same delta to every axis - adding a constant drifts
             // an already non-uniform shape toward a cube (or away from one)
             // instead of scaling it evenly.
-            float uniformFactor = 1f + WithDeadzone(left.y) * uniformSpeed * dt;
+            float uniformFactor = 1f + WithDeadzone(right.y) * uniformSpeed * dt;
             size *= uniformFactor;
 
             // The 3 independent axes are deliberately additive (in meters),
             // since their whole point is to change the shape's proportions.
-            size.y += WithDeadzone(left.x) * axisSpeed * dt;
-            size.x += WithDeadzone(right.x) * axisSpeed * dt;
-            size.z += WithDeadzone(right.y) * axisSpeed * dt;
+            size.y += WithDeadzone(left.y) * axisSpeed * dt;
+            size.x += WithDeadzone(left.x) * axisSpeed * dt;
+            size.z += WithDeadzone(right.x) * axisSpeed * dt;
 
             element.Size = size;
         }

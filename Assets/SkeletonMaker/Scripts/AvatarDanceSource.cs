@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.Serialization;
 
 namespace SkeletonMaker
 {
@@ -10,160 +11,206 @@ namespace SkeletonMaker
         [Tooltip("The Humanoid Animator to read bone poses from (e.g. the instantiated Dancing.fbx rig).")]
         [SerializeField] private Animator sourceAnimator;
 
+        [Tooltip("The player's tracked body (Meta Movement SDK). Tracking mode is skipped while this is unassigned.")]
+        [SerializeField] private AvatarBodyTrackingSource bodySource;
+
         [Tooltip("The stand-in skeleton root whose Bone_/Joint_ children get repositioned. Defaults to this GameObject.")]
         [SerializeField] private Transform standInRoot;
 
-        [Tooltip("Dancing when true; a frozen A-pose (matching the main skeleton) when false. Toggled at runtime by either controller trigger below, or flip it here directly for testing.")]
-        [SerializeField] private bool isDancing = true;
+        [Tooltip("Still: the frozen A-pose (matching the main skeleton). Animation: the dance. Tracking: the player's own movement. Chosen at runtime with the three ModeButtons, or set it here directly for testing.")]
+        [FormerlySerializedAs("isDancing")]
+        [SerializeField] private AvatarMode mode = AvatarMode.Animation;
 
-        [Tooltip("Either controller's trigger (XRI's \"Activate\" action) toggles dancing on/off - unused elsewhere in this project.")]
-        [SerializeField] private InputActionReference leftToggleAction;
-        [SerializeField] private InputActionReference rightToggleAction;
+        [Tooltip("Tracking mode only. Off: the avatar stands at a distance, where the still one does. On: it is worn - every joint sits on the player's own. Flipped at runtime by Y on the left controller (or E).")]
+        [SerializeField] private bool embody;
 
-        // anchorRotation = humanoidBone.rotation * restInverse[joint]; identity-in-A-pose by construction.
-        private readonly Dictionary<string, Quaternion> restInverse = new Dictionary<string, Quaternion>();
-        private bool needsCalibration = true;
+        private readonly AvatarDriver driver = new AvatarDriver();
+
+        private AnimatorPoseSource animatorSource;
+        private AvatarMode activeMode = AvatarMode.Still;
+
+        // The driver's placement is fixed once at the start of a mode, so the avatar starts out
+        // standing where the still one does and from then on moves exactly as its source does.
+        private bool placed;
+
+        private bool activeEmbodied;
+
+        // The skeleton that is built on: the still pose is read off it, also in
+        // the stages where it is switched off (Join).
+        private SkeletonRig mainRig;
+
+        private SkeletonRig MainRig()
+        {
+            if (mainRig == null) mainRig = BodyReceiver.MainRig();
+            return mainRig;
+        }
+        private InputAction embodyAction;
+
+        public AvatarMode Mode
+        {
+            get => mode;
+            set => mode = value;
+        }
+
+        /// <summary>Whether there is a tracked body to follow at all.</summary>
+        public bool CanTrack => bodySource != null;
+
+        public bool Embody
+        {
+            get => embody;
+            set => embody = value;
+        }
 
         private void Reset() => standInRoot = transform;
 
         private void OnEnable()
         {
-            needsCalibration = true;
-            if (leftToggleAction != null) { leftToggleAction.action.Enable(); leftToggleAction.action.performed += OnToggle; }
-            if (rightToggleAction != null) { rightToggleAction.action.Enable(); rightToggleAction.action.performed += OnToggle; }
+            driver.Forget();
+            animatorSource = null;
+            activeMode = AvatarMode.Still;
+            placed = false;
+
+            // Built here rather than wired in the scene: Y is the one face button still free.
+            if (embodyAction == null)
+            {
+                embodyAction = new InputAction("Embody", InputActionType.Button);
+                embodyAction.AddBinding("<XRController>{LeftHand}/{SecondaryButton}");
+                embodyAction.AddBinding("<Keyboard>/e");
+            }
+            embodyAction.Enable();
         }
 
         private void OnDisable()
         {
-            if (leftToggleAction != null) leftToggleAction.action.performed -= OnToggle;
-            if (rightToggleAction != null) rightToggleAction.action.performed -= OnToggle;
+            embodyAction.Disable();
+            ShowHeadPrimitives(true);
+            activeEmbodied = false;
+            if (activeMode == AvatarMode.Tracking && bodySource != null) bodySource.End();
+            activeMode = AvatarMode.Still;
         }
-
-        private void OnToggle(InputAction.CallbackContext ctx) => isDancing = !isDancing;
 
         private void LateUpdate()
         {
             if (standInRoot == null) standInRoot = transform;
-            if (isDancing)
+            if (Application.isPlaying && embodyAction.WasPressedThisFrame()) embody = !embody;
+            if (mode != activeMode) EnterMode(mode);
+
+            // Only the tracked body can be worn; taking it off again puts it back at its distance.
+            bool embodied = embody && activeMode == AvatarMode.Tracking;
+            if (embodied != activeEmbodied)
             {
-                if (sourceAnimator == null || !sourceAnimator.isHuman) return;
-                if (needsCalibration && Calibrate()) needsCalibration = false;
-                DriveFromAnimator();
+                activeEmbodied = embodied;
+                placed = false;
+                ShowHeadPrimitives(true); // off again below once the avatar is actually on the player
             }
-            else
+
+            var source = ActiveSource();
+            if (source == null || !source.Refresh())
             {
-                DriveFromRestPose();
+                // Nothing to follow (yet): stand still, unless the source dropped out after the
+                // avatar had already moved off - then hold its last pose rather than snap back.
+                if (!placed) DriveFromRestPose();
+                return;
             }
+
+            if (!driver.EnsureCalibrated(source, standInRoot)) { DriveFromRestPose(); return; }
+            if (embodied ? !PlaceOnPlayer() : !placed && !Place(source)) { DriveFromRestPose(); return; }
+            ShowHeadPrimitives(!embodied);
+            driver.Drive(source, standInRoot);
         }
 
-        // The main skeleton's "Left" joints sit on +X, which is the humanoid's *Right* side when both
-        // face +Z, so every name is looked up on the opposite side to keep primitives on the same limb.
-        private static string HumanoidName(string jointName)
+        // Whatever is built on the head would sit around the player's eyes once worn. Switched off
+        // as objects, which takes them out of the raymarch too; every frame, to catch new ones.
+        private void ShowHeadPrimitives(bool show)
         {
-            if (jointName.StartsWith("Left")) return "Right" + jointName.Substring(4);
-            if (jointName.StartsWith("Right")) return "Left" + jointName.Substring(5);
-            return jointName;
+            var head = standInRoot != null ? standInRoot.Find("Bone_Neck_Head") : null;
+            if (head == null) return;
+            foreach (Transform primitive in head)
+                if (primitive.gameObject.activeSelf != show) primitive.gameObject.SetActive(show);
         }
 
-        // Rest orientation = the humanoid's zero-muscle T-pose, converted to the A-pose the main
-        // skeleton uses (identity anchors) by swinging each limb onto its A-pose direction.
-        private bool Calibrate()
+        // Embodied: the tracked joints go exactly where they are in the scene. Redone every frame,
+        // as the rig the player stands in can move.
+        private bool PlaceOnPlayer()
         {
-            var mainRig = SkeletonRig.Instance != null ? SkeletonRig.Instance : FindFirstObjectByType<SkeletonRig>();
-            if (mainRig == null || sourceAnimator.avatar == null) return false;
-
-            var segments = new List<(string from, string to, Vector3 dir)>();
-            foreach (Transform child in mainRig.transform)
-            {
-                if (!child.name.StartsWith("Bone_")) continue;
-                var parts = child.name.Substring("Bone_".Length).Split('_');
-                var lr = child.GetComponent<LineRenderer>();
-                if (parts.Length != 2 || lr == null) continue;
-                var localDir = child.localRotation * (lr.GetPosition(1) - lr.GetPosition(0));
-                segments.Add((parts[0], parts[1], standInRoot.TransformDirection(localDir).normalized));
-            }
-
-            var restPos = new Dictionary<string, Vector3>();
-            var restRot = new Dictionary<string, Quaternion>();
-            var handler = new HumanPoseHandler(sourceAnimator.avatar, sourceAnimator.transform);
-            var current = new HumanPose();
-            handler.GetHumanPose(ref current);
-            var rest = new HumanPose
-            {
-                bodyPosition = current.bodyPosition,
-                bodyRotation = Quaternion.identity,
-                muscles = new float[current.muscles.Length],
-            };
-            handler.SetHumanPose(ref rest);
-            foreach (var name in System.Enum.GetNames(typeof(HumanBodyBones)))
-            {
-                var t = BoneByHumanoidName(name);
-                if (t == null) continue;
-                restPos[name] = t.position;
-                restRot[name] = t.rotation;
-            }
-            handler.SetHumanPose(ref current);
-            handler.Dispose();
-
-            restInverse.Clear();
-            foreach (Transform child in standInRoot)
-            {
-                foreach (var jointName in NamesFor(child))
-                {
-                    if (restInverse.ContainsKey(jointName)) continue;
-                    string humanName = HumanoidName(jointName);
-                    if (!restRot.TryGetValue(humanName, out var rotAtRest)) continue;
-
-                    string a = null, b = null;
-                    Vector3 aDir = default;
-                    foreach (var s in segments)
-                        if (s.from == jointName) { a = s.from; b = s.to; aDir = s.dir; break; }
-                    if (a == null)
-                        foreach (var s in segments)
-                            if (s.to == jointName) { a = s.from; b = s.to; aDir = s.dir; break; }
-                    if (a == null) continue;
-                    if (!restPos.TryGetValue(HumanoidName(a), out var pa) || !restPos.TryGetValue(HumanoidName(b), out var pb)) continue;
-
-                    var tDir = (pb - pa).normalized;
-                    var swing = Quaternion.FromToRotation(tDir, aDir);
-                    restInverse[jointName] = Quaternion.Inverse(swing * rotAtRest) * standInRoot.rotation;
-                }
-            }
+            if (!bodySource.TryGetTrackingToWorld(out var position, out var rotation)) return false;
+            driver.Place(rotation, Vector3.zero, position);
+            placed = true;
             return true;
         }
 
-        private void DriveFromAnimator()
+        // Runs however the mode was changed: a ModeButton, a stage, or straight in the Inspector.
+        private void EnterMode(AvatarMode next)
         {
-            foreach (Transform child in standInRoot)
+            if (bodySource != null && Application.isPlaying)
             {
-                if (child.name.StartsWith("Joint_"))
-                {
-                    string jointName = child.name.Substring("Joint_".Length);
-                    var bone = BoneTransform(jointName);
-                    if (bone == null) continue;
-                    child.SetPositionAndRotation(bone.position, AnchorRotation(jointName, bone));
-                }
-                else if (child.name.StartsWith("Bone_"))
-                {
-                    var parts = child.name.Substring("Bone_".Length).Split('_');
-                    if (parts.Length != 2) continue;
-                    var from = BoneTransform(parts[0]);
-                    var to = BoneTransform(parts[1]);
-                    if (from == null || to == null) continue;
-                    child.SetPositionAndRotation(from.position, AnchorRotation(parts[0], from));
-                    var lr = child.GetComponent<LineRenderer>();
-                    if (lr != null)
-                    {
-                        lr.SetPosition(0, Vector3.zero);
-                        lr.SetPosition(1, child.InverseTransformPoint(to.position));
-                    }
-                }
+                if (next == AvatarMode.Tracking) bodySource.Begin();
+                else if (activeMode == AvatarMode.Tracking) bodySource.End();
             }
+            activeMode = next;
+            placed = false;
+        }
+
+        private IAvatarPoseSource ActiveSource()
+        {
+            switch (activeMode)
+            {
+                case AvatarMode.Animation:
+                    if (sourceAnimator == null) return null;
+                    if (animatorSource == null || animatorSource.Animator != sourceAnimator)
+                        animatorSource = new AnimatorPoseSource(sourceAnimator);
+                    return animatorSource;
+                case AvatarMode.Tracking:
+                    return bodySource;
+                default:
+                    return null;
+            }
+        }
+
+        // Puts the source's hips over the still avatar's hips. The dance keeps its own heading and
+        // height; the tracked body is also turned to face the way the still avatar does and stood
+        // on the stand-in's floor, since the player is somewhere else, facing anywhere, in a
+        // tracking space whose floor needn't be the scene's.
+        private bool Place(IAvatarPoseSource source)
+        {
+            var mainRig = MainRig();
+            var stillHips = mainRig != null ? mainRig.transform.Find("Bone_Hips_Spine") : null;
+            if (stillHips == null || !source.TryGetPose("Hips", out var hips, out _)) return false;
+
+            var up = standInRoot.up;
+            var target = standInRoot.TransformPoint(stillHips.localPosition);
+            var rotation = Quaternion.identity;
+            float height = Vector3.Dot(hips - standInRoot.position, up);
+
+            if (activeMode == AvatarMode.Tracking)
+            {
+                if (!AvatarDriver.TryGetRight(source, false, out var right)) return false;
+                var forward = Vector3.ProjectOnPlane(Vector3.Cross(right, up), up);
+                if (forward.sqrMagnitude > 1e-6f)
+                    rotation =Quaternion.AngleAxis(Vector3.SignedAngle(forward, standInRoot.forward, up), up);
+
+                // Whichever foot is lowest is taken to be on the ground.
+                float lowest = float.MaxValue;
+                foreach (var foot in new[] { "LeftFoot", "LeftToes", "RightFoot", "RightToes" })
+                    if (source.TryGetPose(foot, out var p, out _)) lowest = Mathf.Min(lowest, Vector3.Dot(p - hips, up));
+                float stillLowest = float.MaxValue;
+                foreach (Transform child in mainRig.transform)
+                {
+                    var lr = child.GetComponent<LineRenderer>();
+                    if (lr == null) continue;
+                    stillLowest = Mathf.Min(stillLowest, (child.localPosition + child.localRotation * lr.GetPosition(1)).y);
+                }
+                if (lowest < float.MaxValue && stillLowest < float.MaxValue) height = stillLowest - lowest;
+            }
+
+            driver.Place(rotation, hips, target + up * (height - Vector3.Dot(target - standInRoot.position, up)));
+            placed = true;
+            return true;
         }
 
         private void DriveFromRestPose()
         {
-            var mainRig = SkeletonRig.Instance;
+            var mainRig = MainRig();
             if (mainRig == null) return;
             foreach (Transform child in standInRoot)
             {
@@ -179,28 +226,5 @@ namespace SkeletonMaker
                 }
             }
         }
-
-        private static IEnumerable<string> NamesFor(Transform child)
-        {
-            if (child.name.StartsWith("Joint_"))
-            {
-                yield return child.name.Substring("Joint_".Length);
-            }
-            else if (child.name.StartsWith("Bone_"))
-            {
-                var parts = child.name.Substring("Bone_".Length).Split('_');
-                if (parts.Length == 2) { yield return parts[0]; yield return parts[1]; }
-            }
-        }
-
-        private Quaternion AnchorRotation(string jointName, Transform bone) =>
-            restInverse.TryGetValue(jointName, out var inv) ? bone.rotation * inv : bone.rotation;
-
-        private Transform BoneTransform(string jointName) => BoneByHumanoidName(HumanoidName(jointName));
-
-        private Transform BoneByHumanoidName(string humanoidName) =>
-            System.Enum.TryParse(humanoidName, out HumanBodyBones bone) && bone != HumanBodyBones.LastBone
-                ? sourceAnimator.GetBoneTransform(bone)
-                : null;
     }
 }

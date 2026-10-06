@@ -16,8 +16,27 @@ namespace SkeletonMaker
 
         private Grabbable held;
 
+        // A on the right controller, held while grabbing with either hand:
+        // take a copy and leave the original where it is. Built here rather
+        // than wired in the scene, as both hands share the one modifier.
+        private static InputAction duplicateAction;
+
+        private static InputAction DuplicateAction
+        {
+            get
+            {
+                if (duplicateAction == null)
+                {
+                    duplicateAction = new InputAction("Duplicate", InputActionType.Button);
+                    duplicateAction.AddBinding("<XRController>{RightHand}/{PrimaryButton}");
+                }
+                return duplicateAction;
+            }
+        }
+
         private void OnEnable()
         {
+            DuplicateAction.Enable();
             if (selectAction == null) return;
             selectAction.action.performed += OnSelectPerformed;
             selectAction.action.canceled += OnSelectCanceled;
@@ -57,6 +76,9 @@ namespace SkeletonMaker
 
             if (best != null)
             {
+                if (DuplicateAction.IsPressed() && best.TryGetComponent(out SkeletonPlacement placement))
+                    best = placement.DuplicateForGrab();
+
                 held = best;
                 held.Grab(transform);
             }

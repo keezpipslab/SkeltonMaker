@@ -70,6 +70,9 @@ Shader "SkeletonMaker/RaymarchQuad"
 
             int _RMQ_MaxSteps;
             float _RMQ_Smoothing;
+            float _RMQ_Inflate;                          // subtracted from the scene distance (d - c)
+            float _RMQ_Repeat;                           // spacing of the repeated copies across the floor, 0 = off
+            float _RMQ_RepeatDistance;                   // how far the repeated copies are drawn
             float3 _RMQ_LightDir;                        // world, pointing toward the light
             float3 _RMQ_LightColor;
             float _RMQ_Ambient;
@@ -223,12 +226,46 @@ Shader "SkeletonMaker/RaymarchQuad"
             float2 SmoothMin(float a, float b, float k)
             {
                 if (k <= 0.0) return a < b ? float2(a, 0.0) : float2(b, 1.0);
+
+                // 'a' is still SceneSDF's 1e5 "nothing yet" sentinel: take b as is.
+                // Blending against it would compute 1e5 + (b - 1e5), and a float
+                // has only ~8mm of precision at 1e5, so the first shape's
+                // distance would come out quantized into 8mm steps - which shows
+                // up as concentric rings on whichever shape is drawn first.
+                if (a >= 1e4) return float2(b, 1.0);
+
                 float h = saturate(0.5 + 0.5 * (a - b) / k);
                 return float2(lerp(a, b, h) - k * h * (1.0 - h), h);
             }
 
+            // mod(p): wraps space around every _RMQ_Repeat meters across the
+            // floor (XZ), so the one set of shapes is met again in every cell.
+            // Centred on the middle of the shapes, which keeps the real ones
+            // in the middle of their own cell, as far from its edges as can be.
+            float3 Fold(float3 p)
+            {
+                if (_RMQ_Repeat <= 0.0) return p;
+                float2 q = p.xz - _RMQ_SceneBounds.xz;
+                p.xz = q - _RMQ_Repeat * round(q / _RMQ_Repeat) + _RMQ_SceneBounds.xz;
+                return p;
+            }
+
+            // How far along the ray p's cell ends. Inside a cell the distance
+            // only knows about that cell's copy, so a step must never carry
+            // past the edge - the next cell's copy may be right behind it.
+            float CellExit(float3 p, float3 rd)
+            {
+                float2 q = p.xz - _RMQ_SceneBounds.xz;
+                q -= _RMQ_Repeat * round(q / _RMQ_Repeat);
+                float2 edge = sign(rd.xz) * (_RMQ_Repeat * 0.5);
+                float tx = abs(rd.x) > 1e-5 ? (edge.x - q.x) / rd.x : 1e20;
+                float tz = abs(rd.z) > 1e-5 ? (edge.y - q.y) / rd.z : 1e20;
+                return min(tx, tz);
+            }
+
             float SceneSDF(float3 p, out float3 color)
             {
+                p = Fold(p);
                 float best = 1e5;
                 color = float3(0, 0, 0);
                 float k = _RMQ_Smoothing;
@@ -249,7 +286,10 @@ Shader "SkeletonMaker/RaymarchQuad"
                     color = lerp(color, _RMQ_ShapeColors[i].rgb, m.y);
                     best = m.x;
                 }
-                return best;
+
+                // d - c: the surface is wherever this returns 0, so taking c
+                // off everywhere moves it c further out (or in, below 0).
+                return best - _RMQ_Inflate;
             }
 
             float SceneDist(float3 p)
@@ -328,10 +368,34 @@ Shader "SkeletonMaker/RaymarchQuad"
                 for (int i = 0; i < _RMQ_ShapeCount; i++)
                 {
                     float4 bounds = _RMQ_ShapeBounds[i];
-                    float2 r = RaySphere(ro, rd, float4(bounds.xyz, bounds.w + _RMQ_Smoothing));
+                    float2 r = RaySphere(ro, rd, float4(bounds.xyz, bounds.w + _RMQ_Smoothing + max(_RMQ_Inflate, 0.0)));
                     if (r.y < r.x) continue;
                     tMin = min(tMin, r.x);
                     tMax = max(tMax, r.y);
+                }
+                return float2(tMin, tMax);
+            }
+
+            // With repeating on there are copies in every direction across the
+            // floor, so the per-shape spheres above say nothing; what's left is
+            // the layer between the lowest and highest shape, out to the draw
+            // distance.
+            float2 RepeatRange(float3 ro, float3 rd)
+            {
+                float y0 = _RMQ_SceneBounds.y - _RMQ_SceneBounds.w;
+                float y1 = _RMQ_SceneBounds.y + _RMQ_SceneBounds.w;
+                float tMin = 0.0;
+                float tMax = _RMQ_RepeatDistance;
+                if (abs(rd.y) > 1e-5)
+                {
+                    float a = (y0 - ro.y) / rd.y;
+                    float b = (y1 - ro.y) / rd.y;
+                    tMin = max(tMin, min(a, b));
+                    tMax = min(tMax, max(a, b));
+                }
+                else if (ro.y < y0 || ro.y > y1)
+                {
+                    return float2(1.0, -1.0);
                 }
                 return float2(tMin, tMax);
             }
@@ -383,7 +447,10 @@ Shader "SkeletonMaker/RaymarchQuad"
 
                 // Only march the stretch of ray that actually passes near some
                 // shape - pixels that miss every shape cost nothing beyond this.
-                float2 range = ShapesRange(eye, rd);
+                bool repeating = _RMQ_Repeat > 0.0;
+                float2 range;
+                if (repeating) range = RepeatRange(eye, rd);
+                else range = ShapesRange(eye, rd);
                 if (range.y < range.x) return Background();
                 float tStart = max(range.x, _StartAtSurface > 0.5 ? surfaceDist : 0.0);
                 if (range.y < tStart) return Background();
@@ -395,6 +462,7 @@ Shader "SkeletonMaker/RaymarchQuad"
                 {
                     float d = SceneDist(eye + rd * t);
                     if (d < EPSILON * t) { hit = true; break; }
+                    if (repeating) d = min(d, CellExit(eye + rd * t, rd) + 0.002); // land just inside the next cell
                     t += d;
                     if (t > range.y) break;
                 }
@@ -416,6 +484,10 @@ Shader "SkeletonMaker/RaymarchQuad"
                 float spec = pow(saturate(dot(n, h)), _RMQ_SpecularPow) * _RMQ_Specular * (diffuse > 0.0 ? 1.0 : 0.0);
 
                 float3 color = albedo * (_RMQ_Ambient * occlusion + diffuse * _RMQ_LightColor) + spec * _RMQ_LightColor;
+
+                // The far copies fade out rather than stop dead at the draw distance.
+                if (repeating && _ClipBackground < 0.5)
+                    color = lerp(color, _RMQ_BackgroundColor, smoothstep(0.5, 1.0, t / _RMQ_RepeatDistance));
                 return float4(color, 1.0);
             }
             ENDHLSL
