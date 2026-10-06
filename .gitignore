@@ -108,3 +108,9 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+
+# Burst debug output of a build
+/*_BurstDebugInformation_DoNotShip/
+
+# Meta Immersive Debugger dev agent: this PC's address and an access token
+/[Aa]ssets/Resources/DevAgentSettings.asset*

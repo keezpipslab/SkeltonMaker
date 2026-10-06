@@ -16,6 +16,11 @@ namespace SkeletonMaker
 
         private Grabbable held;
 
+        /// <summary>What this hand is holding, or null.</summary>
+        public Grabbable Held => held;
+
+        public bool GripPressed => selectAction != null && selectAction.action.IsPressed();
+
         // A on the right controller, held while grabbing with either hand:
         // take a copy and leave the original where it is. Built here rather
         // than wired in the scene, as both hands share the one modifier.
@@ -56,6 +61,7 @@ namespace SkeletonMaker
         private void OnSelectPerformed(InputAction.CallbackContext ctx)
         {
             if (held != null) return;
+            if (SizeHandles.Claims(transform.position)) return; // the grip is pulling a size cube instead
 
             var hits = Physics.OverlapSphere(transform.position, grabRadius, grabbableLayer, QueryTriggerInteraction.Collide);
             Grabbable best = null;

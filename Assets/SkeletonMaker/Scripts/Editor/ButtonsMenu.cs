@@ -10,7 +10,8 @@ namespace SkeletonMaker
     /// smoothing knob, "Finished Button" (on to the Join stage) beside it,
     /// under where the math stage's dial is, and in a row above the dials the
     /// three that choose what the avatar follows: "Still Button", "Animation
-    /// Button" and "You Button". For the Together Math stage, a row of four
+    /// Button" and "You Button", and beside them "Hide Button" (the avatars'
+    /// lines and see-through primitives on/off). For the Together Math stage, a row of four
     /// that choose how the two avatars are combined: "Union Button", "Subtract
     /// A Button", "Subtract B Button" and "Intersect Button", where Mirror
     /// and Finished are in the other stages. Each is the size of a dial and
@@ -57,6 +58,10 @@ namespace SkeletonMaker
 
             var finished = Object.FindFirstObjectByType<FinishedButton>(FindObjectsInactive.Include);
             if (finished == null) finished = BuildButton<FinishedButton>("Finished Button", under + side * Beside, dial.rotation);
+
+            // Beside the three above, as it is there in the same stages.
+            var hide = Object.FindFirstObjectByType<HideToggle>(FindObjectsInactive.Include);
+            if (hide == null) BuildButton<HideToggle>("Hide Button", dial.position + dial.forward * Above + side * (Beside * Modes.Length), dial.rotation);
 
             // The Together Math stage's row takes the place of these two, which aren't there in that stage.
             var combineButtons = Object.FindObjectsByType<CombineButton>(FindObjectsInactive.Include, FindObjectsSortMode.None);

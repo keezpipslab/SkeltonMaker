@@ -95,7 +95,7 @@ listing it is current, and anything listed nowhere (XR rig, table, managers) is 
   The dial goes back to neutral when the stage is left, so Build always shows the skeleton as built.
 - **Join** - the building is over: the table, the shapes on it (`LooseShapes`, on the `Stages`
   object), the color baths and the skeleton they were hung on are gone, leaving the avatar wearing
-  what was built, the smoothing knob and the mode buttons. The quad starts on your head, so
+  what was built, the smoothing knob, the mode buttons and the Hide button. The quad starts on your head, so
   everything is seen raymarched (see Head view; take it off as usual, and it goes back to where it
   stood when the stage ends). And the other performer appears: this is the only stage, apart from
   Record, in which anyone else is on the stage - `BodyReceiver` drops whatever comes in during the
@@ -104,7 +104,8 @@ listing it is current, and anything listed nowhere (XR rig, table, managers) is 
   old mode back afterwards. With nobody on the other end (the `OscLink`'s Remote Host is this PC)
   the other performer is your own recording, or the dancing fake peer until you have made one -
   see `TestPartner` below.
-- **Together Math** - Join, plus a row of four buttons (`CombineButton`, `RaymarchQuad.combine`)
+- **Together Math** - Join, plus the Math stage's **Inflate** dial (applied to the combined
+  surface, and back at 0 when the stage is left) and a row of four buttons (`CombineButton`, `RaymarchQuad.combine`)
   under the smoothing knob that choose how the raymarch quad puts the two avatars together. **A**
   is your own avatar, **B** the other performer's (every source `BodyReceiver` adds is in group B;
   everything else is A - `ShapeSource.group`). Each body is first the smooth union of its own
@@ -134,10 +135,14 @@ adding something to the scene the tutorial shouldn't show (or edit the lists by 
 
 ### Buttons
 
-`SkeletonMaker > Add Buttons` builds nine flat cubes the size of a dial, around the dials:
+`SkeletonMaker > Add Buttons` builds ten flat cubes the size of a dial, around the dials:
 **Mirror** (`MirrorToggle`, lit while mirror placement is on) under the smoothing knob, **Finished**
 (`FinishedButton`, on to Join) beside it, and in a row above the dials **Still**, **Animation** and
-**You** (`ModeButton`), which choose what the avatar follows; the current one is lit. The Together
+**You** (`ModeButton`), which choose what the avatar follows; the current one is lit. Beside them
+**Hide** (`HideToggle`), in every stage they are in: while it's lit, the lines and the see-through
+primitives of your avatar and of every other performer are not drawn, leaving only the raymarched
+shapes (the main skeleton and the table are not touched). It goes off by itself in the stages
+without the button (Tutorial, Record). The Together
 Math stage's **Union**, **Subtract A**, **Subtract B** and **Intersect** (`CombineButton`) are a row
 starting where Mirror is, which like Finished is not there in that stage. Buttons are
 pressed with the **trigger**: pull either trigger while that hand is at the cube (`PushButton`;

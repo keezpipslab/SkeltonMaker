@@ -63,6 +63,9 @@ namespace SkeletonMaker
 
         private void Reset() => standInRoot = transform;
 
+        /// <summary>The stand-in skeleton root, whose children are the anchors.</summary>
+        public Transform Root => standInRoot != null ? standInRoot : transform;
+
         private void OnEnable()
         {
             if (standInRoot == null) standInRoot = transform;

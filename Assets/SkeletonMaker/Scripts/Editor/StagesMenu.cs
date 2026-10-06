@@ -14,10 +14,11 @@ namespace SkeletonMaker
     /// the color baths and the other ten slots belong to the Build stage (the
     /// guide switches the color baths and the quad on early, at their steps).
     /// Math is Build plus the math dials. Join is the avatar, the quad, the
-    /// smoothing knob and the mode buttons: no table, no shapes to build with
+    /// smoothing knob, the mode buttons and the hide button: no table, no shapes to build with
     /// and no skeleton to hang them on (LooseShapes, added here to the Stages
     /// object, takes the shapes lying on the table away). Together Math is
-    /// Join plus the buttons that combine the two avatars. The hidden Record
+    /// Join plus the math dials and the buttons that combine the two avatars.
+    /// The hidden Record
     /// stage is the skeleton, the avatar, the quad and the "Record Guide" text.
     /// Replaces what a previous run added; run it again after adding
     /// something to the scene that the tutorial shouldn't show, or edit the
@@ -155,13 +156,16 @@ namespace SkeletonMaker
             if (knob != null) joinObjects.Add(knob.gameObject);
             foreach (var button in Object.FindObjectsByType<ModeButton>(FindObjectsInactive.Include, FindObjectsSortMode.None))
                 joinObjects.Add(button.gameObject);
+            foreach (var button in Object.FindObjectsByType<HideToggle>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                joinObjects.Add(button.gameObject);
 
-            // Together Math: Join, plus the buttons that choose how the two avatars are combined.
+            // Together Math: Join, plus the math dials and the buttons that choose how the two avatars are combined.
             // None yet: no such stage, and "next" skips it.
             var togetherMathObjects = new List<GameObject>();
             if (combineButtons.Length > 0)
             {
                 togetherMathObjects.AddRange(joinObjects);
+                togetherMathObjects.AddRange(dials);
                 foreach (var button in combineButtons) togetherMathObjects.Add(button.gameObject);
             }
             SameStagesAsJoin();
