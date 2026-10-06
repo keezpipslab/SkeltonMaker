@@ -14,7 +14,7 @@ namespace SkeletonMaker
     /// (and no permission is asked for) until the mode is actually used.
     /// </summary>
     [RequireComponent(typeof(MetaSourceDataProvider))]
-    public class AvatarBodyTrackingSource : MonoBehaviour, IAvatarPoseSource
+    public class AvatarBodyTrackingSource : BodySource
     {
         // HumanBodyBones name -> tracked joint, the same pairing Meta's own
         // humanoid retargeting uses.
@@ -55,8 +55,9 @@ namespace SkeletonMaker
         private Vector3[] restPositions;
         private Quaternion[] restRotations;
         private int skeletonChangedCount = -1;
+        private int restVersion = -1;
 
-        public int RestVersion { get; private set; } = -1;
+        public override int RestVersion => restVersion;
 
         private void Awake()
         {
@@ -75,7 +76,7 @@ namespace SkeletonMaker
 
         /// <summary>Starts body tracking, asking for the permission first if the
         /// player hasn't granted it yet. Safe to call again to retry.</summary>
-        public void Begin()
+        public override void Begin()
         {
             wanted = true;
             const OVRPermissionsRequester.Permission permission = OVRPermissionsRequester.Permission.BodyTracking;
@@ -90,7 +91,7 @@ namespace SkeletonMaker
             provider.enabled = true;
         }
 
-        public void End()
+        public override void End()
         {
             wanted = false;
             if (provider != null) provider.enabled = false;
@@ -102,7 +103,7 @@ namespace SkeletonMaker
             if (wanted && permissionId == OVRPermissionsRequester.BodyTrackingPermission) Begin();
         }
 
-        public bool Refresh()
+        public override bool Refresh()
         {
             poseValid = false;
             if (provider == null || !provider.enabled) return false;
@@ -135,7 +136,7 @@ namespace SkeletonMaker
                 restPositions[i] = tPose[i].Position;
                 restRotations[i] = tPose[i].Orientation;
             }
-            RestVersion++;
+            restVersion++;
             return true;
         }
 
@@ -146,7 +147,7 @@ namespace SkeletonMaker
         /// XR Origin's own tracking origin needn't be the one Meta's plugin
         /// uses. Falls back on the camera's parent (XR Origin's Camera Offset)
         /// while the plugin has no head pose.</summary>
-        public bool TryGetTrackingToWorld(out Vector3 position, out Quaternion rotation)
+        public override bool TryGetTrackingToWorld(out Vector3 position, out Quaternion rotation)
         {
             position = default;
             rotation = Quaternion.identity;
@@ -169,7 +170,7 @@ namespace SkeletonMaker
             return true;
         }
 
-        public bool TryGetPose(string humanoidBone, out Vector3 position, out Quaternion rotation)
+        public override bool TryGetPose(string humanoidBone, out Vector3 position, out Quaternion rotation)
         {
             if (poseValid && Bones.TryGetValue(humanoidBone, out var id))
             {
@@ -182,7 +183,7 @@ namespace SkeletonMaker
             return false;
         }
 
-        public bool TryGetRestPose(string humanoidBone, out Vector3 position, out Quaternion rotation)
+        public override bool TryGetRestPose(string humanoidBone, out Vector3 position, out Quaternion rotation)
         {
             if (restPositions != null && Bones.TryGetValue(humanoidBone, out var id))
             {

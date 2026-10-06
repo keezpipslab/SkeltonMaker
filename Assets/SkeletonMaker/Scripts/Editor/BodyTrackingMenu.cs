@@ -9,7 +9,8 @@ namespace SkeletonMaker
     /// SkeletonMaker > Add Body Tracking Source: adds the "Body Tracking Source"
     /// object (Movement SDK's MetaSourceDataProvider + AvatarBodyTrackingSource)
     /// and wires it into the scene's AvatarDanceSource, which is what makes its
-    /// Tracking mode available. Replaces any source already in the scene.
+    /// Tracking mode available. Replaces any source already in the scene,
+    /// Xsens input included - run Add Xsens Input again afterwards.
     /// </summary>
     public static class BodyTrackingMenu
     {

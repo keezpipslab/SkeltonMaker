@@ -401,6 +401,35 @@ holds:
 the source's T-pose (the Animator's zero-muscle pose, or the tracked skeleton's bind pose) and is done
 in the body's own frame, so it holds whichever way the source happens to be facing.
 
+### Xsens suit instead (Movella MVN)
+
+`SkeletonMaker > Add Xsens Input` gives the `Body Tracking Source` object two more components and
+points `AvatarDanceSource` and `BodySender` at the second:
+
+- `XsensBodySource` - listens for MVN Analyze/Animate's **network streamer** (UDP port 9763,
+  datagram type `MXTP02`: position and quaternion of the 23 body segments; see Xsens' "MVN
+  real-time network streaming protocol specification"). In MVN: Options > Network Streamer, add
+  this PC's address and port 9763 and tick **Position + Orientation (Quaternion)**. Nothing of
+  Movella's is installed in the project. It only listens between `Begin()` and `End()`, i.e. while
+  the avatar is in Tracking mode.
+- `BodyInput` - which of the two bodies Tracking mode follows (**Use**: Meta or Xsens). **X** on
+  the keyboard switches, also while tracking. Both it and the two sources are a `BodySource`, which
+  is all `AvatarDanceSource` and `BodySender` know about.
+
+MVN's world is right-handed, Z up, X forward, in centimeters or meters (told apart by the size of
+the body); the joints are converted to Unity's axes. Pelvis, L3, T8, Neck and Head are used as
+Hips, Spine, Chest, Neck and Head; L5 and T12 are not used. MVN sends no T-pose, and its segments
+have no rotation in the T-pose by definition, so a standard T-pose without rotations is the rest
+pose (**Up Axis** must match the streamer's option; Z unless it was changed).
+
+Where the suit is in the scene comes from the headset, as both are on the same head: the suit's
+head is kept on the camera and MVN's heading is turned, slowly, until the suit's head looks the
+way the headset does - which also takes out the suit's drift - with MVN's floor on the floor of
+the XR rig. With **Follow Headset** off, or with no headset running (a PC with only a suit), MVN's
+origin is the `Body Tracking Source` object itself. This only matters when the avatar is worn
+(embodied) and for what is sent to the other performer; the distant avatar is placed on the
+stand-in whatever the source.
+
 ## Passthrough (the real room, and its camera)
 
 `SkeletonMaker > Add Passthrough` adds three objects and switches passthrough and passthrough camera

@@ -13,7 +13,7 @@ namespace SkeletonMaker
         [SerializeField] private OscLink link;
 
         [Tooltip("The player's tracked body. Nothing but the built skeleton is sent while this is unassigned or not tracking.")]
-        [SerializeField] private AvatarBodyTrackingSource bodySource;
+        [SerializeField] private BodySource bodySource;
 
         [Tooltip("Whose smoothing goes along with the skeleton. Optional.")]
         [SerializeField] private RaymarchQuad quad;

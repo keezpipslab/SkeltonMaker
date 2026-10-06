@@ -37,7 +37,7 @@ namespace SkeletonMaker
 
             var sender = root.AddComponent<BodySender>();
             Wire(sender, ("link", link), ("quad", quad),
-                ("bodySource", Object.FindFirstObjectByType<AvatarBodyTrackingSource>(FindObjectsInactive.Include)));
+                ("bodySource", XsensMenu.SceneBodySource()));
 
             Wire(root.AddComponent<BodyReceiver>(), ("link", link), ("quad", quad));
             Wire(root.AddComponent<BodyRecorder>(), ("link", link));

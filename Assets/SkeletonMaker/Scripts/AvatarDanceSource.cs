@@ -11,8 +11,8 @@ namespace SkeletonMaker
         [Tooltip("The Humanoid Animator to read bone poses from (e.g. the instantiated Dancing.fbx rig).")]
         [SerializeField] private Animator sourceAnimator;
 
-        [Tooltip("The player's tracked body (Meta Movement SDK). Tracking mode is skipped while this is unassigned.")]
-        [SerializeField] private AvatarBodyTrackingSource bodySource;
+        [Tooltip("The player's tracked body: Meta's body tracking, an Xsens suit, or the BodyInput that switches between them. There is no Tracking mode while this is unassigned.")]
+        [SerializeField] private BodySource bodySource;
 
         [Tooltip("The stand-in skeleton root whose Bone_/Joint_ children get repositioned. Defaults to this GameObject.")]
         [SerializeField] private Transform standInRoot;
