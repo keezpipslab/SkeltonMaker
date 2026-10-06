@@ -65,6 +65,8 @@ namespace SkeletonMaker
 
         private void OnEnable()
         {
+            if (standInRoot == null) standInRoot = transform;
+            SkeletonRig.EnsureBodyAnchors(standInRoot); // a bone added to the skeleton since the scene was saved
             driver.Forget();
             animatorSource = null;
             activeMode = AvatarMode.Still;

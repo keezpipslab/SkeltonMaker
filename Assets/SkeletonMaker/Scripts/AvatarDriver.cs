@@ -73,16 +73,23 @@ namespace SkeletonMaker
                     if (restInverse.ContainsKey(jointName)) continue;
                     if (!source.TryGetRestPose(HumanoidName(jointName), out _, out var rotAtRest)) continue;
 
-                    string a = null, b = null;
-                    Vector3 aDir = default;
-                    foreach (var s in segments)
-                        if (s.from == jointName) { a = s.from; b = s.to; aDir = s.direction; break; }
-                    if (a == null)
+                    // The bone that starts at this joint, else the one that ends there - and only
+                    // one the source has both ends of (it has no hand tip, so the wrist goes by the forearm).
+                    bool found = false;
+                    Vector3 aDir = default, pa = default, pb = default;
+                    for (int pass = 0; pass < 2 && !found; pass++)
+                    {
                         foreach (var s in segments)
-                            if (s.to == jointName) { a = s.from; b = s.to; aDir = s.direction; break; }
-                    if (a == null) continue;
-                    if (!source.TryGetRestPose(HumanoidName(a), out var pa, out _) ||
-                        !source.TryGetRestPose(HumanoidName(b), out var pb, out _)) continue;
+                        {
+                            if ((pass == 0 ? s.from : s.to) != jointName) continue;
+                            if (!source.TryGetRestPose(HumanoidName(s.from), out pa, out _) ||
+                                !source.TryGetRestPose(HumanoidName(s.to), out pb, out _)) continue;
+                            aDir = s.direction;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) continue;
 
                     var tDir = toBody * (pb - pa).normalized;
                     var swing = Quaternion.FromToRotation(tDir, aDir);
@@ -122,9 +129,12 @@ namespace SkeletonMaker
                 {
                     var parts = child.name.Substring("Bone_".Length).Split('_');
                     if (parts.Length != 2) continue;
-                    if (!TryGetPlaced(source, parts[0], out var from, out var rotation) ||
-                        !TryGetPlaced(source, parts[1], out var to, out _)) continue;
+                    if (!TryGetPlaced(source, parts[0], out var from, out var rotation)) continue;
                     child.SetPositionAndRotation(from, rotation);
+
+                    // A bone whose far end the source doesn't have (the hand) keeps its
+                    // length and simply turns with the joint it starts at.
+                    if (!TryGetPlaced(source, parts[1], out var to, out _)) continue;
                     var lr = child.GetComponent<LineRenderer>();
                     if (lr != null)
                     {

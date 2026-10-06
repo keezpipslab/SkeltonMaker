@@ -58,6 +58,11 @@ namespace SkeletonMaker
             { "RightLowerArm", new Vector3(-0.377f, 1.085f, 0f) },
             { "RightHand", new Vector3(-0.470f, 0.737f, 0f) },
 
+            // The hand: 10 cm on from the wrist, in line with the forearm. Not a
+            // joint any body source reports - the hand bone just turns with the wrist.
+            { "LeftHandTip", new Vector3(0.496f, 0.640f, 0f) },
+            { "RightHandTip", new Vector3(-0.496f, 0.640f, 0f) },
+
             // Knee kicked slightly forward (+Z) so it's a visible kink rather
             // than a dead-straight hip-to-ankle line, the same non-collinear
             // "landmark" treatment the elbow already gets above.
@@ -92,6 +97,7 @@ namespace SkeletonMaker
             ("Chest", "RightShoulder"), ("RightShoulder", "RightUpperArm"), ("RightUpperArm", "RightLowerArm"), ("RightLowerArm", "RightHand"),
             ("Hips", "LeftUpperLeg"), ("LeftUpperLeg", "LeftLowerLeg"), ("LeftLowerLeg", "LeftFoot"), ("LeftFoot", "LeftToes"),
             ("Hips", "RightUpperLeg"), ("RightUpperLeg", "RightLowerLeg"), ("RightLowerLeg", "RightFoot"), ("RightFoot", "RightToes"),
+            ("LeftHand", "LeftHandTip"), ("RightHand", "RightHandTip"),
         };
 
         // The stick's own layout: one bone, no hinges. Its joint names are
@@ -158,6 +164,24 @@ namespace SkeletonMaker
                 CreateBone(root, bone.from, bone.to, Joints[bone.from], Joints[bone.to], lineWidth, lineMaterial, lineColor);
             foreach (var jointName in HingeJointNames)
                 CreateJoint(root, jointName, Joints[jointName]);
+        }
+
+        /// <summary>Adds whichever of the full body's Bone_/Joint_ children root
+        /// doesn't have yet, looking like the bones it does have - for a body
+        /// that was laid out before a bone was added to the list (the avatar
+        /// stand-in in the scene).</summary>
+        public static void EnsureBodyAnchors(Transform root)
+        {
+            var look = root.GetComponentInChildren<LineRenderer>(true);
+            foreach (var bone in Bones)
+            {
+                if (root.Find($"Bone_{bone.from}_{bone.to}") != null) continue;
+                CreateBone(root, bone.from, bone.to, Joints[bone.from], Joints[bone.to],
+                    look != null ? look.startWidth : 0.012f, look != null ? look.sharedMaterial : null,
+                    look != null ? look.startColor : Color.white);
+            }
+            foreach (var jointName in HingeJointNames)
+                if (root.Find($"Joint_{jointName}") == null) CreateJoint(root, jointName, Joints[jointName]);
         }
 
         private static LineRenderer CreateBone(Transform parent, string from, string to, Vector3 a, Vector3 b,

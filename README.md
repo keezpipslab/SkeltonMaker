@@ -172,7 +172,10 @@ avatar duplicate.
 - `HeldElementScaler` - the thumbstick-to-size mapping described above.
 - `SkeletonRig` - the line skeleton itself (`LineRenderer` per bone) and
   `NearestBoneIndex(worldPoint)` used both for the placement check and to estimate which bone a
-  primitive is being placed on. 21 joints matching Unity's HumanBodyBones chain (hips/spine/
+  primitive is being placed on. Each arm ends in a 10 cm hand bone past the wrist
+  (`Bone_LeftHand_LeftHandTip`), to build a hand on; its tip is not a joint any body source
+  reports, so on the avatar and on a remote skeleton the hand bone simply turns with the wrist.
+  Otherwise 21 joints matching Unity's HumanBodyBones chain (hips/spine/
   chest/neck/head, shoulder-upperarm-lowerarm-hand per arm, upperleg-lowerleg-foot-toes per leg) -
   the same joint set/connectivity the rayMarchVR project's `RaymarchAvatarSource` drives live off a
   Humanoid Animator, but frozen here into a fixed A-pose (arms angled ~35 degrees down and out from
