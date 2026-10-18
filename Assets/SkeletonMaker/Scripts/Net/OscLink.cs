@@ -17,6 +17,11 @@ namespace SkeletonMaker
     /// Two PCs: each one's Remote Host is the other's address, same port on
     /// both. One PC on its own: leave Remote Host on 127.0.0.1 with both ports
     /// equal, and everything sent comes straight back in.
+    ///
+    /// Remote Host "auto" (the standalone Quest, which has no keyboard to type
+    /// an address with): nothing is sent until something comes in, and from
+    /// then on everything goes to whoever sent the latest datagram, at Remote
+    /// Port. So only the PC needs the Quest's address.
     /// </summary>
     [DefaultExecutionOrder(-50)]
     public class OscLink : MonoBehaviour
@@ -24,7 +29,10 @@ namespace SkeletonMaker
         [Tooltip("Who this instance is on the stage. Must differ between the two PCs.")]
         [SerializeField] private int performerId = 1;
 
+        public const string Auto = "auto";
+
         [SerializeField] private int localPort = 9000;
+        [Tooltip("The other instance's address, or \"auto\" to answer whoever sends to this one.")]
         [SerializeField] private string remoteHost = "127.0.0.1";
         [SerializeField] private int remotePort = 9000;
 
@@ -68,6 +76,9 @@ namespace SkeletonMaker
         private string resolvedHost;
         private int resolvedPort;
 
+        // Remote Host "auto": the address the latest datagram came from (set on the receive thread).
+        private volatile IPAddress heardFrom;
+
         private void OnEnable()
         {
             try
@@ -110,6 +121,7 @@ namespace SkeletonMaker
                 try
                 {
                     arrived.Enqueue(socket.Receive(ref from));
+                    heardFrom = from.Address;
                 }
                 catch (SocketException)
                 {
@@ -142,6 +154,20 @@ namespace SkeletonMaker
 
         private bool TryResolveRemote()
         {
+            if (remoteHost == Auto)
+            {
+                IPAddress sender = heardFrom;
+                if (sender == null) return false; // nobody to answer yet
+                if (remote == null || !remote.Address.Equals(sender) || remote.Port != remotePort)
+                {
+                    remote = new IPEndPoint(sender, remotePort);
+                    Debug.Log($"OscLink: answering {sender}:{remotePort}.", this);
+                }
+                resolvedHost = remoteHost;
+                resolvedPort = remotePort;
+                return true;
+            }
+
             if (remote != null && resolvedHost == remoteHost && resolvedPort == remotePort) return true;
 
             resolvedHost = remoteHost;

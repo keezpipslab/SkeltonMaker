@@ -109,7 +109,7 @@ namespace SkeletonMaker
                     if (held != null && held.TryGetComponent(out ElementColor _)) SetStep(Step.Place);
                     break;
                 case Step.Place:
-                    if (PlacedOnStick() >= 1) SetStep(Step.Window);
+                    if (PlacedOnStick() >= 1) SetStep(HasWindow ? Step.Window : Step.Done);
                     break;
                 case Step.Window:
                     if (PlacedOnStick() >= 2) SetStep(Step.MoveWindow);
@@ -177,7 +177,7 @@ namespace SkeletonMaker
             // These steps only work on a shape that's in a hand.
             bool needsHeld = step == Step.Scale || step == Step.Reshape || step == Step.Color;
             string text = needsHeld && held == null ? "Pick a shape up again first." : Instructions[(int)step];
-            label.text = $"{(int)step + 1} / {(int)Step.Done}\n\n{text}\n\n(B skips the tutorial)";
+            label.text = $"{(int)step + 1} / {(int)(HasWindow ? Step.Done : Step.Window)}\n\n{text}\n\n(B skips the tutorial)";
         }
 
         private void RememberWindow()
@@ -209,6 +209,10 @@ namespace SkeletonMaker
             }
             return false;
         }
+
+        // No window (a scene without the raymarch quad): the tutorial ends
+        // with the place step.
+        private bool HasWindow => windowObjects != null && windowObjects.Length > 0;
 
         private int PlacedOnStick() => stick != null && stick.isActiveAndEnabled ? stick.PlacedElementCount() : 0;
 

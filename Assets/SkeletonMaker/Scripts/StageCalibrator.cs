@@ -13,7 +13,7 @@ namespace SkeletonMaker
     /// stage. Mark A is the Stage Origin, mark B lies straight ahead of it
     /// (the Stage Origin's forward). The XR Origin is moved, not the scene.
     ///
-    /// With the controller: press C, rest the right controller on mark A and
+    /// With the controller: press C (or click the left thumbstick), rest the right controller on mark A and
     /// pull the trigger (or press Space), then the same on mark B. Anything
     /// else that can find the two marks - a marker detector - calls
     /// Calibrate() with them directly.
@@ -52,6 +52,7 @@ namespace SkeletonMaker
         private Step step;
         private Vector3 markA;
         private InputAction captureAction;
+        private InputAction startAction;
         private bool calibrated;
         private bool stale;
         private float listenFrom;
@@ -77,11 +78,19 @@ namespace SkeletonMaker
                 captureAction.AddBinding("<Keyboard>/space");
             }
             captureAction.Enable();
+            if (startAction == null)
+            {
+                startAction = new InputAction("Start Calibration", InputActionType.Button);
+                startAction.AddBinding("<XRController>{LeftHand}/{Primary2DAxisClick}");
+                startAction.AddBinding("<Keyboard>/c");
+            }
+            startAction.Enable();
         }
 
         private void OnDisable()
         {
             captureAction.Disable();
+            startAction.Disable();
             foreach (var subsystem in watched) subsystem.trackingOriginUpdated -= OnTrackingOriginUpdated;
             watched.Clear();
             step = Step.Idle;
@@ -94,9 +103,9 @@ namespace SkeletonMaker
         {
             WatchTrackingOrigin();
 
-            var keyboard = Keyboard.current;
-            if (keyboard != null && keyboard.cKey.wasPressedThisFrame)
+            if (startAction.WasPressedThisFrame())
             {
+                Buzz();
                 if (step != Step.Idle)
                 {
                     step = Step.Idle;

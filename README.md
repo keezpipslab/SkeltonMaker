@@ -242,6 +242,18 @@ is one slot, so Save overwrites the last save - but every save is also written t
 `world-<date>-<time>.json` beside it, and those are kept. Load only reads `world.json`: to go back
 to an older save, copy its file over `world.json`.
 
+## No Raymarch scene (prototyping without the raymarching)
+
+`SkeletonMaker > Create No Raymarch Scene` (Editor menu) makes `Scenes/SkeletonBuilder No
+Raymarch.unity`: a copy of `SkeletonBuilder.unity` with the raymarch quad taken out, along with
+everything that only acts on it - the smoothing and inflate dials, the four combine buttons and
+the Hide button. The rest (table, skeleton, avatar, stages, network, passthrough) is as in the
+source scene, and the shapes are seen as their meshes. Math and Together Math are still stages but
+show nothing more than Build and Join. The tutorial ends after the place step (`TutorialGuide` with
+no window objects). Its `OscLink` is set to performer 2 with Remote Host `auto`: it is the scene the
+standalone Quest runs (see Two performers below). Run the menu again to rebuild it from
+`SkeletonBuilder.unity`; changes made by hand in the copy are lost.
+
 ## Saving and loading a skeleton
 
 `SkeletonComposition` is one skeleton's configuration as plain data: every primitive placed on the
@@ -594,6 +606,23 @@ and reads back a test message.
 default, which the firewall has to let in). Your body is sent while the avatar is in Tracking mode;
 the built skeleton is sent all the time.
 
+**A PC on Link with a standalone Quest**: the second performer can be a Quest running the No
+Raymarch scene as an app of its own (`SkeletonMaker > Build Quest Standalone`, `QuestBuildMenu`).
+Its `OscLink` has Remote Host **auto**: it sends nothing until the PC is heard, then answers
+whatever address that came from - so only the PC needs an address, the Quest's (Settings > Wi-Fi on
+the headset). Both must be on the same network, and the Unity editor must be let in on UDP 9000 for
+that network's firewall profile. The app is built from a second copy of the project, a git
+worktree kept on the Android build target, so this one never leaves Windows (switching it would
+make Editor Play over Link run with the Android settings):
+
+1. commit here, then in the copy: `git checkout --detach main`;
+2. `unity build <copy> --target Android --execute-method SkeletonMaker.QuestBuildMenu.Build`
+   (the apk lands in `Builds/Quest/` in the copy);
+3. install it with the Quest on USB: `adb install -r Builds/Quest/SkeletonMaker.apk`, and start it
+   from the library's Unknown Sources.
+
+There is no keyboard on the Quest: calibration starts with a click of the left thumbstick.
+
 ### The stage frame
 
 "Stage" here is the place, not the app's Tutorial/Build/Math phases. The `Stage Origin` object
@@ -608,7 +637,7 @@ it, in meters, Unity's left-handed axes, Y up. Both PCs must have it at the same
   echo or a recording while Remote Host is this PC) - Quest's legs are estimated, so the skeleton is not where the feet are.
 - **Calibration** (`StageCalibrator`) lines the headset up with the real floor by moving the XR
   Origin, never the scene. Put two marks on the floor, **Mark Distance** apart: A is the stage
-  origin, B is straight ahead of it. Press **C**, rest the right controller on A and pull the
+  origin, B is straight ahead of it. Press **C** (or click the left thumbstick), rest the right controller on A and pull the
   trigger (or Space), then the same on B; the controller buzzes each time. The console reports how
   far apart it measured the marks - both PCs should agree to within a couple of centimeters. The
   result is saved to `stage-calibration.json` under `Application.persistentDataPath` and put back on
