@@ -27,6 +27,18 @@ namespace SkeletonMaker
 
         private MaterialPropertyBlock block;
 
+        /// <summary>The color the bath gives; setting it recolors the disc
+        /// (the PaletteButton does).</summary>
+        public Color Color
+        {
+            get => color;
+            set
+            {
+                color = value;
+                ApplySurfaceColor();
+            }
+        }
+
         private void OnEnable() => ApplySurfaceColor();
 
         private void OnValidate() => ApplySurfaceColor();

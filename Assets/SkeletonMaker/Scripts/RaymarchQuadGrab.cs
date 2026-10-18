@@ -46,11 +46,14 @@ namespace SkeletonMaker
         [SerializeField] private int headMaxSteps = 48;
         [Tooltip("The stages that begin with the quad on the head. It can still be taken off there.")]
         [SerializeField] private Stage[] headStages = { Stage.Join, Stage.TogetherMath };
+        [Tooltip("Begin with the quad on the head, whatever the stage (the designer scene, which has no stages).")]
+        [SerializeField] private bool startOnHead;
 
         private Collider col;
         private RaymarchQuad quad;
         private bool held;
         private bool inHeadStage;
+        private bool startedOnHead;
 
         // Where the quad stood before it was last picked up: where it goes
         // back to if it's switched off while on the head.
@@ -66,6 +69,9 @@ namespace SkeletonMaker
         private bool savedClip;
         private int savedSteps;
         private float savedShadow, savedOcclusion;
+
+        /// <summary>True while the quad is carried in the left hand.</summary>
+        public bool InHand => held;
 
         /// <summary>True while the quad is worn as the head view.</summary>
         public bool OnHead { get; private set; }
@@ -101,15 +107,25 @@ namespace SkeletonMaker
                 leftGripAction.action.canceled -= OnGripCanceled;
             }
 
-            if (OnHead) LeaveHead(false);
-            else Release();
+            // Not when it is the head that is being switched off, as when Play
+            // stops with the quad on it: Unity refuses to move a child out then.
+            bool headGoing = OnHead && transform.parent != null && !transform.parent.gameObject.activeInHierarchy;
+            if (OnHead && !headGoing) LeaveHead(false);
+            else if (!OnHead) Release();
             inHeadStage = false;
+            startedOnHead = false;
         }
 
         // Looked at here rather than when the stage changes: the quad itself is
         // being switched on by that change, and can't be moved under the head yet.
         private void Update()
         {
+            if (startOnHead && !startedOnHead && Head != null)
+            {
+                startedOnHead = true;
+                EnterHead();
+            }
+
             var stages = StageController.Instance;
             bool headStage = stages != null && System.Array.IndexOf(headStages, stages.Current) >= 0;
             if (headStage == inHeadStage) return;

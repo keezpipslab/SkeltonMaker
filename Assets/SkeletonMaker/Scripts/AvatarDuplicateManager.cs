@@ -38,6 +38,14 @@ namespace SkeletonMaker
             Transform jointTransform = target.GetJoint(jointName);
             if (jointTransform == null) return null; // slot not wired up yet
 
+            // The slot only says which joint. On a body with the rig's own anchors, go under the
+            // one the element is actually on, so what's on a bone turns with the bone and only
+            // what's on a joint turns as the joint does (see AvatarDriver).
+            Transform sameAnchor = placedTransform.parent != null && jointTransform.parent != null
+                ? jointTransform.parent.Find(placedTransform.parent.name)
+                : null;
+            if (sameAnchor != null) jointTransform = sameAnchor;
+
             var duplicate = Instantiate(placedTransform.gameObject, jointTransform);
             duplicate.name = placedTransform.name + " (Avatar Duplicate)";
             MakeGhost(duplicate, sourceElement.Kind);

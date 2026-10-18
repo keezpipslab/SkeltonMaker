@@ -86,13 +86,17 @@ namespace SkeletonMaker
 
         [Header("Look")]
         [Range(0f, 0.3f)]
-        [Tooltip("Blend radius between shapes (meters). 0 = hard union. Driven at runtime by the SmoothingKnob.")]
+        [Tooltip("Blend radius between shapes (meters). 0 = hard union. Driven at runtime by the SmoothingKnob. A designer primitive adds its own to this (WorldElement.Smoothing).")]
         public float smoothing = 0.03f;
 
         [Header("Math")]
         [Range(-0.15f, 0.15f)]
         [Tooltip("Subtracted from the distance to the surface everywhere (meters): above 0 the whole surface moves outward, below 0 inward. Driven at runtime by the InflateKnob.")]
         public float inflate;
+
+        [Min(0.0001f)]
+        [Tooltip("What one meter of Smoothing and Inflate is in the scene. DesignWorld keeps it at the size the designed world is shown at, so a world looks the same however big it is made.")]
+        public float unitScale = 1f;
 
         [Tooltip("How the shapes of group A (this performer's) and group B (the other performers') are put together. Driven at runtime by the CombineButtons.")]
         public CombineMode combine;
@@ -138,6 +142,7 @@ namespace SkeletonMaker
         private static readonly int SceneBoundsId = Shader.PropertyToID("_RMQ_SceneBounds");
         private static readonly int MaxStepsId = Shader.PropertyToID("_RMQ_MaxSteps");
         private static readonly int SmoothingId = Shader.PropertyToID("_RMQ_Smoothing");
+        private static readonly int WidestOwnId = Shader.PropertyToID("_RMQ_WidestOwn");
         private static readonly int InflateId = Shader.PropertyToID("_RMQ_Inflate");
         private static readonly int CombineId = Shader.PropertyToID("_RMQ_Combine");
         private static readonly int RepeatId = Shader.PropertyToID("_RMQ_Repeat");
@@ -170,6 +175,9 @@ namespace SkeletonMaker
             0.45f,   // Link
         };
 
+        /// <summary>Bounding-sphere radius of a kind's native mesh.</summary>
+        public static float BoundRadius(PrimitiveKind kind) => NativeBoundRadius[(int)kind];
+
         private readonly Matrix4x4[] _worldToLocal = new Matrix4x4[MaxShapes];
         private readonly Vector4[] _params = new Vector4[MaxShapes];
         private readonly Vector4[] _bounds = new Vector4[MaxShapes];
@@ -178,6 +186,7 @@ namespace SkeletonMaker
 
         private MeshRenderer _renderer;
         private MaterialPropertyBlock _block;
+        private float _widestOwn; // the largest own smoothing among the shapes gathered this frame
 
         public void SetSourceVisible(int index, bool visible)
         {
@@ -257,8 +266,9 @@ namespace SkeletonMaker
             _block.SetVector(SceneBoundsId, sceneBounds);
 
             _block.SetInteger(MaxStepsId, maxSteps);
-            _block.SetFloat(SmoothingId, smoothing);
-            _block.SetFloat(InflateId, inflate);
+            _block.SetFloat(SmoothingId, smoothing * unitScale);
+            _block.SetFloat(WidestOwnId, _widestOwn);
+            _block.SetFloat(InflateId, inflate * unitScale);
             _block.SetInteger(CombineId, (int)combine);
             _block.SetFloat(RepeatId, repeat);
             _block.SetFloat(RepeatDistanceId, repeatDistance);
@@ -286,6 +296,7 @@ namespace SkeletonMaker
         {
             int count = 0;
             Vector3 min = Vector3.positiveInfinity, max = Vector3.negativeInfinity;
+            _widestOwn = 0f;
 
             foreach (var source in sources)
             {
@@ -340,7 +351,7 @@ namespace SkeletonMaker
                 Vector3 c = _bounds[i];
                 sceneRadius = Mathf.Max(sceneRadius, Vector3.Distance(c, sceneCenter) + _bounds[i].w);
             }
-            sceneBounds = new Vector4(sceneCenter.x, sceneCenter.y, sceneCenter.z, sceneRadius + smoothing + Mathf.Max(inflate, 0f));
+            sceneBounds = new Vector4(sceneCenter.x, sceneCenter.y, sceneCenter.z, sceneRadius + smoothing * unitScale + 2f * _widestOwn + Mathf.Max(inflate * unitScale, 0f));
             return count;
         }
 
@@ -354,6 +365,16 @@ namespace SkeletonMaker
             // A painted element shows its own color instead of its group's.
             if (visual.parent != null && visual.parent.TryGetComponent(out ElementColor own)) color = own.Color;
 
+            // A designer primitive switched to subtract is carved out of the
+            // others: group B, with Combine on Subtract B. It also has a
+            // smoothing of its own, which the shader adds to everyone's.
+            float ownSmoothing = 0f;
+            if (visual.parent != null && visual.parent.TryGetComponent(out WorldElement placed))
+            {
+                if (placed.Subtract) group = ShapeGroup.B;
+                ownSmoothing = placed.Smoothing * unitScale;
+            }
+
             Vector3 scale = visual.lossyScale;
             float sx = Mathf.Abs(scale.x), sy = Mathf.Abs(scale.y), sz = Mathf.Abs(scale.z);
             float minScale = Mathf.Min(sx, Mathf.Min(sy, sz));
@@ -363,7 +384,8 @@ namespace SkeletonMaker
             float radius = NativeBoundRadius[(int)kind] * Mathf.Max(sx, Mathf.Max(sy, sz));
 
             _worldToLocal[count] = visual.worldToLocalMatrix;
-            _params[count] = new Vector4((int)kind, minScale, (int)group, 0f);
+            _params[count] = new Vector4((int)kind, minScale, (int)group, ownSmoothing);
+            _widestOwn = Mathf.Max(_widestOwn, ownSmoothing);
             _bounds[count] = new Vector4(center.x, center.y, center.z, radius);
             _colors[count] = color.linear;
 

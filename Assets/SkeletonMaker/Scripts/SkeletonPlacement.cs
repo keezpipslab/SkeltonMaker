@@ -33,6 +33,7 @@ namespace SkeletonMaker
 
         private Grabbable grabbable;
         private RaymarchableElement element;
+        private BoxCollider shape; // the element's own box: any part of it touching a bone counts
         private Coroutine discardRoutine;
 
         // The copy of this element on the avatar body while it's placed; taken
@@ -67,6 +68,7 @@ namespace SkeletonMaker
         {
             grabbable = GetComponent<Grabbable>();
             element = GetComponent<RaymarchableElement>();
+            shape = GetComponent<BoxCollider>();
         }
 
         private void OnEnable()
@@ -84,7 +86,7 @@ namespace SkeletonMaker
         private void Update()
         {
             if (!grabbable.IsHeld) return;
-            SkeletonRig.Instance?.UpdateHeldPreview(transform.position, placeDistance, jointPlaceDistance);
+            SkeletonRig.Instance?.UpdateHeldPreview(transform.position, placeDistance, jointPlaceDistance, shape);
         }
 
         private void OnGrabbed()
@@ -120,14 +122,14 @@ namespace SkeletonMaker
 
             if (rig != null)
             {
-                int jointIndex = rig.NearestHingeJointIndex(transform.position, out float jointDistance);
+                int jointIndex = rig.NearestHingeJointIndex(transform.position, out float jointDistance, shape);
                 if (jointIndex >= 0 && jointDistance <= jointPlaceDistance)
                 {
                     PlaceOnJoint(rig, jointIndex);
                     return;
                 }
 
-                int boneIndex = rig.NearestBoneIndex(transform.position, out float boneDistance);
+                int boneIndex = rig.NearestBoneIndex(transform.position, out float boneDistance, shape);
                 if (boneIndex >= 0 && boneDistance <= placeDistance)
                 {
                     PlaceOnSkeleton(rig, boneIndex);

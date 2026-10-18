@@ -7,7 +7,8 @@ namespace SkeletonMaker
     /// Poses one line skeleton (a root with SkeletonRig's Bone_/Joint_ children)
     /// from an IAvatarPoseSource: calibrates the source's T-pose against the
     /// rig's A-pose, then every frame moves each anchor to its source joint
-    /// through a placement the owner sets. Shared by the stand-in
+    /// through a placement the owner sets. A Bone_ anchor turns with its bone,
+    /// a Joint_ anchor halfway between the two bones that meet there. Shared by the stand-in
     /// (AvatarDanceSource) and each remote performer (RemoteSkeleton).
     /// </summary>
     public sealed class AvatarDriver
@@ -123,6 +124,13 @@ namespace SkeletonMaker
                 {
                     string jointName = child.name.Substring("Joint_".Length);
                     if (!TryGetPlaced(source, jointName, out var position, out var rotation)) continue;
+
+                    // A joint turns halfway between the bone that ends there and the one that
+                    // starts there, so what's on an elbow stays in the bend instead of going
+                    // with the forearm. Both are identity in the A-pose, so nothing moves there.
+                    if (BoneInto.TryGetValue(jointName, out var before) && TryGetPlaced(source, before, out _, out var rotationBefore))
+                        rotation = Quaternion.Slerp(rotationBefore, rotation, 0.5f);
+
                     child.SetPositionAndRotation(position, rotation);
                 }
                 else if (child.name.StartsWith("Bone_"))
@@ -142,6 +150,23 @@ namespace SkeletonMaker
                         lr.SetPosition(1, child.InverseTransformPoint(to));
                     }
                 }
+            }
+        }
+
+        // For each joint, the joint the bone ending there starts at: LowerArm -> UpperArm.
+        private static Dictionary<string, string> boneInto;
+
+        private static Dictionary<string, string> BoneInto
+        {
+            get
+            {
+                if (boneInto == null)
+                {
+                    boneInto = new Dictionary<string, string>();
+                    foreach (var s in SkeletonRig.BodySegments)
+                        if (!boneInto.ContainsKey(s.to)) boneInto[s.to] = s.from;
+                }
+                return boneInto;
             }
         }
 

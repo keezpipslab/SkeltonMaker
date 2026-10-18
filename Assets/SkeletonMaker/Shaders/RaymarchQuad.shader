@@ -69,13 +69,14 @@ Shader "SkeletonMaker/RaymarchQuad"
             // --- per-frame data from RaymarchQuad ---
             int _RMQ_ShapeCount;
             float4x4 _RMQ_ShapeWorldToLocal[MAX_SHAPES]; // world -> the shape's native mesh space
-            float4 _RMQ_ShapeParams[MAX_SHAPES];         // x = kind, y = mesh->world distance scale, z = group (0 = A, 1 = B)
+            float4 _RMQ_ShapeParams[MAX_SHAPES];         // x = kind, y = mesh->world distance scale, z = group (0 = A, 1 = B), w = this shape's own smoothing, added to _RMQ_Smoothing
             float4 _RMQ_ShapeBounds[MAX_SHAPES];         // xyz = world center, w = world radius
             float4 _RMQ_ShapeColors[MAX_SHAPES];
             float4 _RMQ_SceneBounds;                     // bounding sphere around every shape
 
             int _RMQ_MaxSteps;
-            float _RMQ_Smoothing;
+            float _RMQ_Smoothing;                        // the blend radius everything has; each shape's own (in its params) comes on top
+            float _RMQ_WidestOwn;                        // the largest own smoothing of any shape
             float _RMQ_Inflate;                          // subtracted from the scene distance (d - c)
             int _RMQ_Combine;                            // how groups A and B are put together, see COMBINE_*
             float _RMQ_Repeat;                           // spacing of the repeated copies across the floor, 0 = off
@@ -287,11 +288,20 @@ Shader "SkeletonMaker/RaymarchQuad"
                 p = Fold(p);
                 float best = 1e5;
                 color = float3(0, 0, 0);
-                float k = _RMQ_Smoothing;
+
+                // The own smoothing of what is there so far, where p is: that
+                // of the shapes there, mixed as their colors are.
+                float ownBest = 0.0;
 
                 [loop]
                 for (int i = 0; i < _RMQ_ShapeCount; i++)
                 {
+                    // Two shapes meet over everyone's radius plus what each of
+                    // the two adds (or takes off) itself, so each one's own
+                    // counts in full, whichever of the two comes first.
+                    float own = _RMQ_ShapeParams[i].w;
+                    float k = max(0.0, _RMQ_Smoothing + ownBest + own);
+
                     // Cheap reject: if even this shape's bounding sphere is
                     // further than the blend radius beyond the current best,
                     // it can't change the result.
@@ -303,6 +313,7 @@ Shader "SkeletonMaker/RaymarchQuad"
 
                     float2 m = SmoothMin(best, d, k);
                     color = lerp(color, _RMQ_ShapeColors[i].rgb, m.y);
+                    ownBest = lerp(ownBest, own, m.y);
                     best = m.x;
                 }
 
@@ -320,13 +331,19 @@ Shader "SkeletonMaker/RaymarchQuad"
                 p = Fold(p);
                 float bestA = 1e5, bestB = 1e5;
                 float3 colorA = float3(0, 0, 0), colorB = float3(0, 0, 0);
-                float k = _RMQ_Smoothing;
+
+                // The own smoothing of each body where p is, as ownBest in
+                // SceneSDF. The two bodies meet as two shapes do, which is how
+                // far the edge of a carved hole is rounded off.
+                float ownA = 0.0, ownB = 0.0;
 
                 [loop]
                 for (int i = 0; i < _RMQ_ShapeCount; i++)
                 {
                     bool inB = _RMQ_ShapeParams[i].z > 0.5;
                     float best = inB ? bestB : bestA;
+                    float own = _RMQ_ShapeParams[i].w;
+                    float k = max(0.0, _RMQ_Smoothing + (inB ? ownB : ownA) + own);
 
                     // Cheap reject, as in SceneSDF, against this shape's own body.
                     float4 bounds = _RMQ_ShapeBounds[i];
@@ -339,30 +356,33 @@ Shader "SkeletonMaker/RaymarchQuad"
                     if (inB)
                     {
                         colorB = lerp(colorB, _RMQ_ShapeColors[i].rgb, m.y);
+                        ownB = lerp(ownB, own, m.y);
                         bestB = m.x;
                     }
                     else
                     {
                         colorA = lerp(colorA, _RMQ_ShapeColors[i].rgb, m.y);
+                        ownA = lerp(ownA, own, m.y);
                         bestA = m.x;
                     }
                 }
 
                 float2 both;
+                float kBoth = max(0.0, _RMQ_Smoothing + ownA + ownB);
                 if (_RMQ_Combine == COMBINE_INTERSECT)
                 {
-                    both = SmoothMax(bestA, bestB, k);
+                    both = SmoothMax(bestA, bestB, kBoth);
                     color = lerp(colorA, colorB, both.y);
                 }
                 else if (_RMQ_Combine == COMBINE_SUBTRACT_A)
                 {
                     // What is left is all B's, the walls of the hole too.
-                    both = SmoothMax(bestB, -bestA, k);
+                    both = SmoothMax(bestB, -bestA, kBoth);
                     color = colorB;
                 }
                 else
                 {
-                    both = SmoothMax(bestA, -bestB, k);
+                    both = SmoothMax(bestA, -bestB, kBoth);
                     color = colorA;
                 }
                 return both.x - _RMQ_Inflate;
@@ -452,7 +472,7 @@ Shader "SkeletonMaker/RaymarchQuad"
                 for (int i = 0; i < _RMQ_ShapeCount; i++)
                 {
                     float4 bounds = _RMQ_ShapeBounds[i];
-                    float2 r = RaySphere(ro, rd, float4(bounds.xyz, bounds.w + _RMQ_Smoothing + max(_RMQ_Inflate, 0.0)));
+                    float2 r = RaySphere(ro, rd, float4(bounds.xyz, bounds.w + _RMQ_Smoothing + max(_RMQ_ShapeParams[i].w, 0.0) + _RMQ_WidestOwn + max(_RMQ_Inflate, 0.0)));
                     if (r.y < r.x) continue;
                     tMin = min(tMin, r.x);
                     tMax = max(tMax, r.y);

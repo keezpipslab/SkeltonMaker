@@ -28,6 +28,10 @@ namespace SkeletonMaker
         [SerializeField] private Color nearColor = Color.yellow;
         [SerializeField] private Color placeableColor = Color.green;
 
+        [Tooltip("Mark a selected joint with a small sphere on the joint itself, on top of the bones that meet there fading into its color.")]
+        [SerializeField] private bool jointSphere = true;
+        [SerializeField] private float jointSphereDiameter = 0.04f;
+
         [Tooltip("A single upright bone instead of the whole body: the tutorial's practice stick. Nothing placed on it is copied to the avatar.")]
         [SerializeField] private bool stick;
         [SerializeField] private float stickLength = 0.5f;
@@ -128,6 +132,11 @@ namespace SkeletonMaker
 
         private readonly List<int> highlightedBoneIndices = new List<int>();
         private MaterialPropertyBlock highlightMpb;
+        private readonly Dictionary<Color, Texture2D> gradientTextures = new Dictionary<Color, Texture2D>();
+
+        // The spheres marking a selected joint: one, or two with mirror on.
+        // Made the first time they're needed, in Play only.
+        private readonly List<MeshRenderer> jointSpheres = new List<MeshRenderer>();
 
         /// <summary>The joint names used both here and by AvatarBodyTarget, so a
         /// future avatar's joint slots can be kept in sync with this rig's bones
@@ -330,6 +339,7 @@ namespace SkeletonMaker
             hingeJointAnchors.Clear();
             hingeJointIncidentBones.Clear();
             highlightedBoneIndices.Clear(); // the old bone GameObjects it referred to are gone
+            jointSpheres.Clear(); // children too, so destroyed above
 
             bones = stick ? StickBones : Bones;
             hingeJointNames = stick ? NoHingeJoints : HingeJointNames;
@@ -364,23 +374,30 @@ namespace SkeletonMaker
 
         /// <summary>Index (into the internal bone list) of the bone segment nearest
         /// worldPoint, and its distance - the same "nearest segment" estimate used
-        /// both for the placement radius check and for BoneAnchor/BoneJointName.</summary>
-        public int NearestBoneIndex(Vector3 worldPoint, out float distance)
+        /// both for the placement radius check and for BoneAnchor/BoneJointName.
+        /// With a shape (the held element's box), a bone that passes through the
+        /// box counts as distance 0 wherever along the box it does so, so a long
+        /// element reaches a bone with its ends too, not just its center; of
+        /// several bones it touches, the one nearest worldPoint wins.</summary>
+        public int NearestBoneIndex(Vector3 worldPoint, out float distance, BoxCollider shape = null)
         {
             int bestIndex = -1;
             float best = float.MaxValue;
+            bool bestTouches = false;
             for (int i = 0; i < boneSegmentsLocal.Count; i++)
             {
                 Vector3 a = transform.TransformPoint(boneSegmentsLocal[i].a);
                 Vector3 b = transform.TransformPoint(boneSegmentsLocal[i].b);
                 float d = DistancePointToSegment(worldPoint, a, b);
-                if (d < best)
+                bool touches = shape != null && SegmentTouchesBox(a, b, shape);
+                if ((touches && !bestTouches) || (touches == bestTouches && d < best))
                 {
                     best = d;
                     bestIndex = i;
+                    bestTouches = touches;
                 }
             }
-            distance = best;
+            distance = bestTouches ? 0f : best;
             return bestIndex;
         }
 
@@ -399,23 +416,35 @@ namespace SkeletonMaker
         /// <summary>Index (into the hinge-joint list, HingeJointNames order) of the
         /// hinge joint - shoulder/elbow/wrist/hip/knee/ankle - nearest worldPoint,
         /// and its distance. A point distance, not a segment distance: joints are
-        /// single points, not lines.</summary>
-        public int NearestHingeJointIndex(Vector3 worldPoint, out float distance)
+        /// single points, not lines. With a shape (the held element's box), a
+        /// joint inside the box counts as distance 0 - but only while no bone is
+        /// clearly nearer worldPoint than that joint is, so an element laid
+        /// along a limb, covering the joints at both its ends, still lands on
+        /// the bone; poking a joint with the element's end selects the joint.</summary>
+        public int NearestHingeJointIndex(Vector3 worldPoint, out float distance, BoxCollider shape = null)
         {
+            float boneDistance = shape != null ? DistanceToNearestBone(worldPoint) : 0f;
+
             int bestIndex = -1;
             float best = float.MaxValue;
+            bool bestTouches = false;
             for (int i = 0; i < hingeJointAnchors.Count; i++)
             {
-                float d = Vector3.Distance(worldPoint, hingeJointAnchors[i].position);
-                if (d < best)
+                Vector3 joint = hingeJointAnchors[i].position;
+                float d = Vector3.Distance(worldPoint, joint);
+                bool touches = shape != null && d <= boneDistance + JointTouchSlack && PointInBox(joint, shape);
+                if ((touches && !bestTouches) || (touches == bestTouches && d < best))
                 {
                     best = d;
                     bestIndex = i;
+                    bestTouches = touches;
                 }
             }
-            distance = best;
+            distance = bestTouches ? 0f : best;
             return bestIndex;
         }
+
+        private const float JointTouchSlack = 0.06f;
 
         /// <summary>The transform placed elements nearest this hinge joint should
         /// parent under - a dedicated GameObject at the joint itself (e.g.
@@ -492,18 +521,19 @@ namespace SkeletonMaker
         /// If neither is close enough to place on yet, whichever is nearer gets a
         /// dimmer "approaching" highlight as long as it's within
         /// nearHighlightRadius.</summary>
-        public void UpdateHeldPreview(Vector3 worldPoint, float placeDistance, float jointPlaceDistance)
+        public void UpdateHeldPreview(Vector3 worldPoint, float placeDistance, float jointPlaceDistance, BoxCollider shape = null)
         {
-            int jointIndex = NearestHingeJointIndex(worldPoint, out float jointDistance);
+            int jointIndex = NearestHingeJointIndex(worldPoint, out float jointDistance, shape);
             if (jointIndex >= 0 && jointDistance <= jointPlaceDistance)
             {
-                SetHighlightedBones(hingeJointIncidentBones[jointIndex], placeableColor);
+                HighlightJoint(jointIndex, placeableColor);
                 return;
             }
 
-            int boneIndex = NearestBoneIndex(worldPoint, out float boneDistance);
+            int boneIndex = NearestBoneIndex(worldPoint, out float boneDistance, shape);
             if (boneIndex >= 0 && boneDistance <= placeDistance)
             {
+                HideJointSpheres();
                 SetHighlightedBones(new[] { boneIndex }, placeableColor);
                 return;
             }
@@ -511,10 +541,11 @@ namespace SkeletonMaker
             bool jointNearer = jointIndex >= 0 && (boneIndex < 0 || jointDistance <= boneDistance);
             if (jointNearer && jointDistance <= nearHighlightRadius)
             {
-                SetHighlightedBones(hingeJointIncidentBones[jointIndex], nearColor);
+                HighlightJoint(jointIndex, nearColor);
             }
             else if (!jointNearer && boneIndex >= 0 && boneDistance <= nearHighlightRadius)
             {
+                HideJointSpheres();
                 SetHighlightedBones(new[] { boneIndex }, nearColor);
             }
             else
@@ -523,12 +554,72 @@ namespace SkeletonMaker
             }
         }
 
-        /// <summary>Resets whichever bone(s) are currently highlighted, if any. Safe
-        /// to call any time, including when nothing is highlighted.</summary>
+        /// <summary>Resets whichever bone(s) or joint are currently highlighted, if
+        /// any. Safe to call any time, including when nothing is highlighted.</summary>
         public void ClearHeldPreview()
         {
             foreach (int i in highlightedBoneIndices) ResetBoneColor(i);
             highlightedBoneIndices.Clear();
+            HideJointSpheres();
+        }
+
+        // Every bone meeting at the joint fades from the plain line color at its
+        // far end into the highlight color at the joint, so the joint reads as
+        // the target even where its sphere is hidden behind something.
+        private void HighlightJoint(int jointIndex, Color color)
+        {
+            int mirror = MirrorEnabled ? MirrorHingeJointIndex(jointIndex) : -1;
+            if (mirror == jointIndex) mirror = -1;
+
+            mirroredHighlightScratch.Clear();
+            mirroredHighlightScratch.AddRange(hingeJointIncidentBones[jointIndex]);
+            if (mirror >= 0) mirroredHighlightScratch.AddRange(hingeJointIncidentBones[mirror]);
+            ResetHighlightedBonesExcept(mirroredHighlightScratch);
+
+            FadeBonesInto(jointIndex, color);
+            if (mirror >= 0) FadeBonesInto(mirror, color);
+
+            if (!jointSphere)
+            {
+                HideJointSpheres();
+                return;
+            }
+
+            ShowJointSphere(0, jointIndex, color);
+            if (mirror >= 0) ShowJointSphere(1, mirror, color);
+            else if (jointSpheres.Count > 1) jointSpheres[1].gameObject.SetActive(false);
+        }
+
+        private void FadeBonesInto(int jointIndex, Color color)
+        {
+            foreach (int index in hingeJointIncidentBones[jointIndex])
+            {
+                SetBoneGradient(index, color, bones[index].to == hingeJointNames[jointIndex]);
+                if (!highlightedBoneIndices.Contains(index)) highlightedBoneIndices.Add(index);
+            }
+        }
+
+        private void ShowJointSphere(int slot, int jointIndex, Color color)
+        {
+            while (jointSpheres.Count <= slot)
+            {
+                var sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                sphere.name = "Joint Sphere";
+                Destroy(sphere.GetComponent<Collider>());
+                sphere.transform.SetParent(transform, false);
+                jointSpheres.Add(sphere.GetComponent<MeshRenderer>());
+            }
+
+            var marker = jointSpheres[slot];
+            marker.transform.position = hingeJointAnchors[jointIndex].position;
+            marker.transform.localScale = Vector3.one * jointSphereDiameter;
+            marker.material.color = color; // the pipeline's default, so it draws in URP
+            marker.gameObject.SetActive(true);
+        }
+
+        private void HideJointSpheres()
+        {
+            foreach (var sphere in jointSpheres) sphere.gameObject.SetActive(false);
         }
 
         private void SetHighlightedBones(IReadOnlyList<int> indices, Color color)
@@ -545,8 +636,19 @@ namespace SkeletonMaker
                 indices = mirroredHighlightScratch;
             }
 
-            // Reset any previously-highlighted bone that isn't part of the new set
-            // (e.g. moving from one joint's pair to a single mid-bone highlight).
+            ResetHighlightedBonesExcept(indices);
+
+            foreach (int index in indices)
+            {
+                SetBoneColor(index, color);
+                if (!highlightedBoneIndices.Contains(index)) highlightedBoneIndices.Add(index);
+            }
+        }
+
+        // Reset any previously-highlighted bone that isn't part of the new set
+        // (e.g. moving from one joint's pair to a single mid-bone highlight).
+        private void ResetHighlightedBonesExcept(IReadOnlyList<int> indices)
+        {
             for (int i = highlightedBoneIndices.Count - 1; i >= 0; i--)
             {
                 if (!Contains(indices, highlightedBoneIndices[i]))
@@ -554,12 +656,6 @@ namespace SkeletonMaker
                     ResetBoneColor(highlightedBoneIndices[i]);
                     highlightedBoneIndices.RemoveAt(i);
                 }
-            }
-
-            foreach (int index in indices)
-            {
-                SetBoneColor(index, color);
-                if (!highlightedBoneIndices.Contains(index)) highlightedBoneIndices.Add(index);
             }
         }
 
@@ -578,8 +674,41 @@ namespace SkeletonMaker
             // reliably overrides just this instance's color regardless of whether
             // the assigned material's shader honors per-vertex line colors (not
             // guaranteed for a plain URP Unlit material like SkeletonLineMat).
+            highlightMpb.Clear();
             highlightMpb.SetColor("_BaseColor", color);
             boneLineRenderers[index].SetPropertyBlock(highlightMpb);
+        }
+
+        // A gradient along the bone, as a texture rather than LineRenderer's own
+        // colorGradient for the same reason as above: the line material ignores
+        // vertex colors but does draw its base map, which a line stretches from
+        // its "from" end (u = 0) to its "to" end (u = 1).
+        private void SetBoneGradient(int index, Color color, bool colorAtToEnd)
+        {
+            if (index < 0 || index >= boneLineRenderers.Count) return;
+            if (highlightMpb == null) highlightMpb = new MaterialPropertyBlock();
+
+            highlightMpb.Clear();
+            highlightMpb.SetColor("_BaseColor", Color.white);
+            highlightMpb.SetTexture("_BaseMap", GradientTexture(color));
+            highlightMpb.SetVector("_BaseMap_ST", colorAtToEnd ? new Vector4(1f, 1f, 0f, 0f) : new Vector4(-1f, 1f, 1f, 0f));
+            boneLineRenderers[index].SetPropertyBlock(highlightMpb);
+        }
+
+        private Texture2D GradientTexture(Color color)
+        {
+            if (gradientTextures.TryGetValue(color, out var texture) && texture != null) return texture;
+
+            const int width = 32;
+            texture = new Texture2D(width, 1, TextureFormat.RGBA32, false)
+            {
+                wrapMode = TextureWrapMode.Clamp,
+                hideFlags = HideFlags.HideAndDontSave
+            };
+            for (int x = 0; x < width; x++) texture.SetPixel(x, 0, Color.Lerp(lineColor, color, x / (width - 1f)));
+            texture.Apply();
+            gradientTextures[color] = texture;
+            return texture;
         }
 
         private void ResetBoneColor(int index)
@@ -595,6 +724,38 @@ namespace SkeletonMaker
             float t = lenSq > 1e-8f ? Mathf.Clamp01(Vector3.Dot(p - a, ab) / lenSq) : 0f;
             Vector3 closest = a + ab * t;
             return Vector3.Distance(p, closest);
+        }
+
+        private static bool PointInBox(Vector3 point, BoxCollider box)
+        {
+            Vector3 p = box.transform.InverseTransformPoint(point) - box.center;
+            Vector3 half = box.size * 0.5f;
+            return Mathf.Abs(p.x) <= half.x && Mathf.Abs(p.y) <= half.y && Mathf.Abs(p.z) <= half.z;
+        }
+
+        // Slab test in the box's own space, where it is axis-aligned.
+        private static bool SegmentTouchesBox(Vector3 a, Vector3 b, BoxCollider box)
+        {
+            Vector3 p = box.transform.InverseTransformPoint(a) - box.center;
+            Vector3 d = box.transform.InverseTransformPoint(b) - box.center - p;
+            Vector3 half = box.size * 0.5f;
+
+            float tMin = 0f, tMax = 1f;
+            for (int axis = 0; axis < 3; axis++)
+            {
+                if (Mathf.Abs(d[axis]) < 1e-8f)
+                {
+                    if (Mathf.Abs(p[axis]) > half[axis]) return false;
+                    continue;
+                }
+
+                float t1 = (-half[axis] - p[axis]) / d[axis];
+                float t2 = (half[axis] - p[axis]) / d[axis];
+                tMin = Mathf.Max(tMin, Mathf.Min(t1, t2));
+                tMax = Mathf.Min(tMax, Mathf.Max(t1, t2));
+                if (tMin > tMax) return false;
+            }
+            return true;
         }
     }
 }

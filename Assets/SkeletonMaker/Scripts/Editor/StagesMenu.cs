@@ -123,7 +123,7 @@ namespace SkeletonMaker
             if (knob != null) buildObjects.Add(knob.gameObject);
             var combineButtons = Object.FindObjectsByType<CombineButton>(FindObjectsInactive.Include, FindObjectsSortMode.None);
             foreach (var button in Object.FindObjectsByType<PushButton>(FindObjectsInactive.Include, FindObjectsSortMode.None))
-                if (!(button is CombineButton)) buildObjects.Add(button.gameObject);
+                if (!(button is CombineButton || button is PaletteButton)) buildObjects.Add(button.gameObject); // the palette button is part of the Color Baths
 
             // A slot that's switched off never spawns its shape, so the table
             // starts with just the tutorial's two and fills up when Build begins.

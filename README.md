@@ -26,11 +26,15 @@ Open scene: `Assets/SkeletonMaker/Scenes/SkeletonBuilder.unity`
   - Right stick **left/right**: depth (local Z)
 - **Hold near the skeleton**: the nearest bone line brightens (yellow) as the held element gets
   within 35cm, turning green once within the 15cm placement radius - previewing which bone it'll
-  land on before you let go. Near a hinge joint (shoulder, elbow, wrist, hip, knee, ankle), both
-  bones meeting there brighten together instead of just one, signaling you're aiming at the joint
-  itself rather than partway along a limb - joints use a tighter 6cm radius than bones do (most
-  limb bones here are only 30-40cm long, so a joint had to stay a small, deliberate target rather
-  than swallowing most of the bone's own length).
+  land on before you let go. A bone also turns green as soon as any part of the element's box
+  touches it, so a long element can be placed by its end as well as its center. Near a hinge
+  joint (shoulder, elbow, wrist, hip, knee, ankle), a small sphere marks the joint and the bones
+  meeting there fade from white into its color, signaling you're aiming at the joint itself
+  rather than partway along a limb - joints use a tighter 6cm radius than bones do (most limb
+  bones here are only 30-40cm long, so a joint had to stay a small, deliberate target rather
+  than swallowing most of the bone's own length). A joint inside the element's box counts too,
+  unless a bone is clearly nearer the element's center - so an element laid along a limb still
+  lands on the bone, while poking a joint with its end selects the joint.
 - **Release near/on a hinge joint** (within 6cm of a shoulder/elbow/wrist/hip/knee/ankle): the
   element stays, parented under that joint specifically (e.g. `Joint_LeftLowerArm` for the elbow) -
   takes priority over the bone check below even if a bone segment is technically a hair closer,
@@ -44,6 +48,9 @@ Open scene: `Assets/SkeletonMaker/Scenes/SkeletonBuilder.unity`
   and the hand takes a copy, leaving the original where it is - on the table or on the skeleton.
 - **Mirror**: the **Mirror** button beside the dials (or the **M** key) switches mirror placement
   on and off; while it's lit, a shape placed on one side of the body is also placed on the other.
+- **Hide the table**: the **G** key takes the table away and brings it back (`TableHideToggle`, on
+  the `Table`). Only its renderers and colliders are switched off, so the primitives stay floating
+  at their slots and fresh copies still appear there.
 
 ## Stages (tutorial, build, math, join, together math - and a hidden one to record in)
 
@@ -53,21 +60,23 @@ listing it is current, and anything listed nowhere (XR rig, table, managers) is 
 `SkeletonMaker > Add Stages` (Editor menu, once per scene) adds it and sorts the scene:
 
 - **Tutorial** - starts as the table with only the Sphere and Box slots, and the `Tutorial Guide`
-  text above it. `TutorialGuide` walks through seven steps and moves on as soon as each has actually
+  text above it. `TutorialGuide` walks through nine steps and moves on as soon as each has actually
   been done, switching each new thing on when its step starts:
   1. pick a shape up;
-  2. scale it (right stick up/down);
-  3. reshape it (the other three stick axes; it's changing the width that counts);
+  2. scale it (pull the red size handle; all three sides have to change);
+  3. reshape it (pull a white size handle; one side has to change against another);
   4. color it - the color baths appear;
   5. place it - the `Practice Stick` appears where the skeleton's spine will be: a `SkeletonRig`
      with **Stick** ticked, i.e. one upright bone and no joints, so previewing and placing work
      exactly as on the skeleton (nothing placed on it is copied to the avatar);
   6. look at it through the raymarch quad, which appears now - done once a second shape is on the
      stick, so the two can be seen merging;
-  7. pick the quad up with the left grip - done once it's in the hand (or has moved 5cm).
+  7. pick the quad up with the left grip - done once it's in the hand (or has moved 5cm);
+  8. let go of it at the head - done once it's worn as the head view;
+  9. squeeze the left grip next to the head - done once it's off again.
 
   The guide only watches outcomes (what's in a hand, its `Size` and color, how many shapes are on
-  the stick) and never talks to the baths or the quad - it just switches on whatever objects are
+  the stick, the quad's `OnHead`) and never talks to the baths or the quad - it just switches on whatever objects are
   listed for a step - so those can be restyled without touching it. The one link to the quad is a
   "Tutorial stick" entry the menu adds to its **Sources**, without which shapes on the stick
   wouldn't be drawn. **B** on the right controller (or Enter) skips the tutorial. The stick and
@@ -149,6 +158,90 @@ pressed with the **trigger**: pull either trigger while that hand is at the cube
 within 8 cm). The grip stays for picking things up and turning the dials. Move the objects to put
 them elsewhere; the menu leaves a button that's already there where it is.
 
+`SkeletonMaker > Add Palette Button` adds **Colors** (`PaletteButton`) behind and above the color
+baths, as a child of `Color Baths` (Add Color Baths builds it too). Each press gives the baths the
+next of eight palettes, and after the last their own colors again. A palette is five colors; the
+sixth bath gets white, or black when the palette has a white of its own. What is already painted
+keeps its color.
+
+## Designer scene (design and export a raymarched world)
+
+Open scene: `Assets/SkeletonMaker/Scenes/Designer.unity`, built by `SkeletonMaker > Create Designer
+Scene` (run it again to build it afresh). It is a copy of `SkeletonBuilder.unity` with only the XR
+rig, the raymarch quad and the size handles left: no table, skeleton, avatar, stages or network.
+
+Primitives are placed in space, with no bone to land on: wherever one is let go of, it stays, as a
+child of the `World` object (`WorldElement`, which takes `SkeletonPlacement`'s place on the
+designer's own prefabs under `Prefabs/Designer`; these may grow to 3 m instead of 0.6 m). The quad
+starts on your head (**Start On Head** on `RaymarchQuadGrab`), so the world is seen raymarched from
+the start; take it off with the left grip at your head, as elsewhere.
+
+- **Designer Panel**: everything to pick and turn is on one panel in front of you. Two rows of six
+  slots (`PaletteSlot`) each hold one primitive; a fresh one appears when the last has been placed.
+  One let go of within 8 cm of its slot goes back into it. Below them the **Smoothing** and
+  **Inflate** dials and the **Hide**, **Export**, **Save** and **Load** buttons, and under those a bar: squeeze either
+  grip at the bar and the whole panel moves with the hand (`PanelGrab`). The primitives on the
+  panel are not part of the world: they are not raymarched and not exported.
+- **While a primitive is in a hand**: **B** deletes it, **A** leaves a copy where it is just now
+  (and holding **A** while squeezing the grip takes a copy, as on the skeleton), **Y** switches it
+  between adding and subtracting. Resizing is as elsewhere: the size cubes, or the thumbsticks.
+- **Subtract**: a subtracting primitive is carved out of all the others, wherever it is: the world
+  is the smooth union of what adds, minus the smooth union of what subtracts (the quad's **Combine**
+  is on Subtract B here, and a subtracting primitive is in group B). Its mesh is red.
+- **Smoothing per primitive**: a held primitive has, besides the size cubes, a small dial out past
+  the edge between the side cube and the top cube, on the other hand's side like the cubes
+  (`SizeHandles`; only for a primitive with a `WorldElement`, so the main scene's handles are as
+  they were). Squeeze the other
+  hand's grip at it and twist the wrist, as with the panel's dials. It sets that primitive's own
+  smoothing (`WorldElement.Smoothing`, -0.3 to +0.3 m, the number above the dial), which comes on
+  top of the panel's: 12 o'clock adds nothing, so a primitive that was never touched just follows
+  the panel's Smoothing dial. Two primitives meet over the panel's smoothing plus the own
+  smoothing of each of the two (never below 0): panel 0.03, one primitive +0.05 and the other
+  untouched blend over 0.08. So the panel's dial is added to everything, each primitive's dial
+  counts in full wherever it touches something, and one turned all the way back has a hard edge
+  against anything untouched. The edge of a carved hole is rounded the same way, by the
+  subtracting primitive and what it cuts.
+  A copy keeps its original's value; one put back in its slot loses it.
+- **Scaling the world** (`WorldGrab`, on `World`): squeeze both grips in thin air - nothing in
+  either hand, not at a dial or the panel's bar - and the whole world follows the two controllers,
+  as in Tilt Brush: apart makes it bigger, together smaller (0.02 to 50 times), moving both moves
+  it, and turning them about each other turns it about the vertical, so it stays level. The panel
+  stays where it is. This is only how the world is looked at: Smoothing and Inflate are in the
+  world's own meters (`RaymarchQuad.unitScale`), so it looks the same at every size, and Save and
+  Export write it at the size it was built. A primitive placed while the world is, say, 10 times
+  bigger is a tenth of its size in the world's own terms, which is what makes fine detail
+  possible; its size cubes and limits (3 cm to 3 m) are those of the hand, not of the world.
+- **Hide** (`PreviewHideToggle`): while lit, the meshes of the primitives placed in the world are
+  not drawn, leaving only the raymarched surface. They can still be picked up, and one in a hand
+  shows again for as long as it is held.
+- **Export** (`ExportButton`, `DesignWorld.Export()`): bakes the surface into a mesh and writes it
+  to `Exports/world-<date>-<time>.obj` next to `Assets` (not in git). The text under the button
+  says how it went and the console has the full path. This is the rayMarchVR project's
+  `RaymarchSkeletonMeshBaker` (marching tetrahedra over a grid, then an .obj), ported to run in
+  Play as `WorldMesher`, with this project's twelve shapes, the subtracting, the smoothing and the
+  inflate as the dials stand. It runs off the main thread, so the headset keeps drawing. Cells are
+  1 cm (`DesignWorld`'s **Voxel Size**), or bigger when the world is too large for **Max Cells**
+  (8 million: about 2.5 cm for a 4 x 2 x 4 m world, which takes a few seconds). Unlike the
+  original, vertices are shared between triangles. No colors are written.
+
+`WorldMesher`'s distance math is a C# copy of `Shaders/RaymarchQuad.shader`: **a change to a shape's
+SDF or to the blending in the shader has to be made there too.** With primitives of different
+smoothing, where three or more overlap the result depends a little on the order they are blended
+in; that is the order they were placed in (their order under `World`), which the save file and the
+export keep. The 64-shape limit of the quad
+holds for a world as well; the export has no limit, but what is not drawn is hard to design.
+
+**Save** and **Load** (`WorldStoreButton`; **F5** and **F9** do the same; `DesignWorld.Save()` /
+`Load()` from code) keep the world between sessions, as `CompositionStore` does a skeleton: the file
+is `world.json` under `Application.persistentDataPath` (`DesignWorld`'s **Slot**), holding each
+placed primitive's kind, size, scale, pose, own smoothing and whether it subtracts, plus the smoothing and inflate
+(`WorldDesign`). Loading replaces what is placed and sets both dials; the primitives on the panel
+and in a hand are left alone. The world it replaces is written to `world-before-load.json` first,
+in case Load was pressed by mistake: rename it to `world.json` and load again to get it back. There
+is one slot, so Save overwrites the last save - but every save is also written to
+`world-<date>-<time>.json` beside it, and those are kept. Load only reads `world.json`: to go back
+to an older save, copy its file over `world.json`.
+
 ## Saving and loading a skeleton
 
 `SkeletonComposition` is one skeleton's configuration as plain data: every primitive placed on the
@@ -213,8 +306,8 @@ avatar duplicate.
   per hinge instead.
   Also owns the hold-proximity color preview (`UpdateHeldPreview`/`ClearHeldPreview`, via a
   `MaterialPropertyBlock` override per bone so it works regardless of whether the assigned line
-  material honors per-vertex colors) - checks the nearest hinge joint first (highlighting every bone
-  touching it together) before falling back to the single nearest bone segment.
+  material honors per-vertex colors) - checks the nearest hinge joint first (fading every bone
+  touching it into the highlight color, through a gradient base map) before falling back to the single nearest bone segment.
 - `SkeletonPlacement` - the keep-vs-discard rule on release. A hinge joint within range takes
   priority over a bone segment (`PlaceOnJoint` vs `PlaceOnSkeleton`) - either way it parents under
   the resolved anchor (not the rig root) and triggers `AvatarDuplicateManager`.
@@ -556,7 +649,11 @@ elements of the `state`'s revision have arrived.
   Its ghosts come from `AvatarDuplicateManager.BuildGhost` and it is added to the Raymarch Quad's
   sources (the 64 shapes are shared with everything else; the console warns when they run out).
 - `AvatarDriver` - the calibrate-and-pose part that used to live in `AvatarDanceSource`, now shared
-  by the stand-in and every remote skeleton.
+  by the stand-in and every remote skeleton. A `Bone_` anchor turns with its bone; a `Joint_`
+  anchor turns halfway between the bone that ends at the joint and the one that starts there, so
+  a shape on an elbow or knee stays in the bend rather than going with the forearm or shin. The
+  stand-in's copy of a shape goes under the anchor of the same name as the one it was placed on
+  (`AvatarBodyTarget`'s slot only picks the body), which keeps bone and joint shapes apart.
 - `BodyRecorder` / `BodyPlayer` - record what is sent (or received) to `body-recording.oscrec`
   and play it back in as performer 10 (further recorded performers as 11, 12, ...), looping.
 - `FakePeer` - sends the dance as performer 2, wearing the local skeleton.

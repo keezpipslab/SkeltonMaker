@@ -5,7 +5,8 @@ namespace SkeletonMaker
     /// <summary>
     /// The tutorial stage: a floating text that walks through the controls one
     /// at a time - pick a shape up, scale it, reshape it, color it, place it,
-    /// look at it through the raymarch window, move the window - moving on as soon as the
+    /// look at it through the raymarch window, move the window, wear it on the
+    /// head and take it off again - moving on as soon as the
     /// player has actually done each one, then hands over to the Build stage.
     /// StageController's "next stage" button (B, or Enter) skips it.
     ///
@@ -18,17 +19,19 @@ namespace SkeletonMaker
     /// </summary>
     public class TutorialGuide : MonoBehaviour
     {
-        private enum Step { Grab, Scale, Reshape, Color, Place, Window, MoveWindow, Done }
+        private enum Step { Grab, Scale, Reshape, Color, Place, Window, MoveWindow, HeadOn, HeadOff, Done }
 
         private static readonly string[] Instructions =
         {
             "Reach into a shape on the table\nand squeeze the grip to pick it up.",
-            "Keep holding it.\nRight stick up or down\nmakes it bigger or smaller.",
-            "Now change its shape.\nLeft stick up or down: height.\nRight stick sideways: depth.\nLeft stick sideways: width -\nmake it wider or narrower to go on.",
+            "Keep holding it.\nSmall cubes float around it.\nReach for the red one with your other hand,\nsqueeze the grip and pull:\nthe shape gets bigger or smaller.",
+            "Now change its shape.\nTake one of the white cubes\nthe same way and pull:\neach one stretches the shape\nin its own direction.",
             "Give it a color.\nDip it into one of the colored discs\nbeside the table.",
             "Carry it to the upright stick\nbehind the table. When the stick\nturns green, let go to leave it there.\nDropped anywhere else, a shape\nfinds its way back to the table.",
             "This window shows your shapes\nas one smooth surface.\nPut a second shape on the stick,\nclose to the first, and watch them merge.",
             "You can move the window.\nReach into it with your left hand\nand squeeze the grip to pick it up.",
+            "You can wear the window too.\nWith your left hand, bring it\nup to your head and let go:\nit stays on like a pair of glasses.",
+            "Now everything you look at\nis seen through the window.\nTo take it off, squeeze the left grip\nright next to your head\nand put the window down again.",
             "That's all you need.\nNow build a skeleton.",
         };
 
@@ -45,7 +48,7 @@ namespace SkeletonMaker
         [Header("When a step counts as done")]
         [Tooltip("How much every side has to grow or shrink (as a fraction) for the scale step.")]
         [SerializeField] private float scaleChange = 0.12f;
-        [Tooltip("How much the width has to change against the other two sides (as a fraction) for the reshape step.")]
+        [Tooltip("How much one side has to change against another (as a fraction) for the reshape step.")]
         [SerializeField] private float reshapeChange = 0.15f;
         [Tooltip("How long the closing text stays up before the Build stage starts.")]
         [SerializeField] private float finishDelay = 3f;
@@ -59,6 +62,10 @@ namespace SkeletonMaker
         private Transform[] windowParents;
         private Vector3[] windowPositions;
         private const float WindowMoved = 0.05f; // meters
+
+        // The window's own grab, for whether it is being worn on the head.
+        // None among the window objects: those two steps are passed over.
+        private RaymarchQuadGrab windowGrab;
 
         private void OnEnable()
         {
@@ -96,7 +103,7 @@ namespace SkeletonMaker
                     if (held != null && SmallestChange(held.Size) >= scaleChange) SetStep(Step.Reshape);
                     break;
                 case Step.Reshape:
-                    if (held != null && WidthChange(held.Size) >= reshapeChange) SetStep(Step.Color);
+                    if (held != null && ShapeChange(held.Size) >= reshapeChange) SetStep(Step.Color);
                     break;
                 case Step.Color:
                     if (held != null && held.TryGetComponent(out ElementColor _)) SetStep(Step.Place);
@@ -108,7 +115,13 @@ namespace SkeletonMaker
                     if (PlacedOnStick() >= 2) SetStep(Step.MoveWindow);
                     break;
                 case Step.MoveWindow:
-                    if (WindowPickedUp()) SetStep(Step.Done);
+                    if (WindowPickedUp()) SetStep(Step.HeadOn);
+                    break;
+                case Step.HeadOn:
+                    if (windowGrab == null || windowGrab.OnHead) SetStep(Step.HeadOff);
+                    break;
+                case Step.HeadOff:
+                    if (windowGrab == null || !windowGrab.OnHead) SetStep(Step.Done);
                     break;
                 case Step.Done:
                     if (Time.time >= doneAt) Finish();
@@ -177,6 +190,7 @@ namespace SkeletonMaker
                 if (windowObjects[i] == null) continue;
                 windowParents[i] = windowObjects[i].transform.parent;
                 windowPositions[i] = windowObjects[i].transform.position;
+                if (windowGrab == null) windowGrab = windowObjects[i].GetComponentInChildren<RaymarchQuadGrab>(true);
             }
         }
 
@@ -210,13 +224,12 @@ namespace SkeletonMaker
             Mathf.Abs(size.y / baseline.y - 1f),
             Mathf.Abs(size.z / baseline.z - 1f));
 
-        // And the width control is the only one that changes the width
-        // against both other sides: scaling keeps all three in step, height
-        // and depth each leave the width level with the side they didn't touch.
-        private float WidthChange(Vector3 size)
+        // And reshaping is any one side changing against another, whichever
+        // white cube was pulled: scaling keeps all three in step.
+        private float ShapeChange(Vector3 size)
         {
             float x = size.x / baseline.x, y = size.y / baseline.y, z = size.z / baseline.z;
-            return Mathf.Min(Mathf.Abs(x / y - 1f), Mathf.Abs(x / z - 1f));
+            return Mathf.Max(Mathf.Abs(x / y - 1f), Mathf.Abs(y / z - 1f), Mathf.Abs(z / x - 1f));
         }
     }
 }

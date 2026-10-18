@@ -72,8 +72,59 @@ namespace SkeletonMaker
                 so.ApplyModifiedPropertiesWithoutUndo(); // also runs OnValidate, which tints the disc
             }
 
+            BuildPaletteButton(root.transform);
+
             Selection.activeGameObject = root;
             EditorSceneManager.MarkSceneDirty(root.scene);
+        }
+
+        /// <summary>SkeletonMaker > Add Palette Button: the button that changes the
+        /// baths' colors (PaletteButton), for baths that are already in the scene
+        /// and should stay where they are. Replaces a palette button that's there.</summary>
+        [MenuItem("SkeletonMaker/Add Palette Button")]
+        public static void AddPaletteButton()
+        {
+            var bath = Object.FindFirstObjectByType<ColorBath>(FindObjectsInactive.Include);
+            if (bath == null || bath.transform.parent == null)
+            {
+                EditorUtility.DisplayDialog("Add Palette Button", "No color baths in the open scene - run 'Add Color Baths' first.", "OK");
+                return;
+            }
+
+            var existing = Object.FindFirstObjectByType<PaletteButton>(FindObjectsInactive.Include);
+            if (existing != null) Undo.DestroyObjectImmediate(existing.gameObject);
+
+            var button = BuildPaletteButton(bath.transform.parent);
+            Selection.activeGameObject = button.gameObject;
+            EditorSceneManager.MarkSceneDirty(button.gameObject.scene);
+        }
+
+        // Behind the baths' last row and above them, upright and facing the
+        // player. A child of the baths' root, so it is there when they are.
+        private static PaletteButton BuildPaletteButton(Transform root)
+        {
+            float minX = float.MaxValue, maxX = float.MinValue, maxZ = float.MinValue;
+            foreach (var bath in root.GetComponentsInChildren<ColorBath>(true))
+            {
+                Vector3 local = root.InverseTransformPoint(bath.transform.position);
+                minX = Mathf.Min(minX, local.x);
+                maxX = Mathf.Max(maxX, local.x);
+                maxZ = Mathf.Max(maxZ, local.z);
+            }
+            Vector3 position = root.TransformPoint(new Vector3((minX + maxX) * 0.5f, 0.16f, maxZ + Spacing));
+
+            var origin = GameObject.Find("XR Origin (XR Rig)");
+            Vector3 toViewer = (origin != null ? origin.transform.position : Vector3.zero) - position;
+            toViewer.y = 0f;
+            toViewer = toViewer.sqrMagnitude > 1e-4f ? toViewer.normalized : Vector3.back;
+
+            var button = ButtonsMenu.BuildButton<PaletteButton>("Palette Button", position, Quaternion.LookRotation(Vector3.up, toViewer));
+            button.transform.SetParent(root, true);
+
+            var so = new SerializedObject(button);
+            SmoothingKnobMenu.SetHands(so.FindProperty("hands"), "trigger", "Activate");
+            so.ApplyModifiedPropertiesWithoutUndo();
+            return button;
         }
 
         private static Material GetOrCreateMaterial()

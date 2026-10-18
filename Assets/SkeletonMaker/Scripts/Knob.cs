@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -43,6 +44,9 @@ namespace SkeletonMaker
         [Tooltip("How close (meters) the hand must be to the knob for the grip to take it.")]
         [SerializeField] private float grabRadius = 0.12f;
 
+        /// <summary>The controllers whose grip is turning a dial just now.</summary>
+        public static readonly HashSet<Transform> Turning = new HashSet<Transform>();
+
         private Collider col;
         private int holder = -1;
         private Quaternion prevRotation;
@@ -86,6 +90,7 @@ namespace SkeletonMaker
                     hands[i].grip.action.canceled -= canceled[i];
                 }
             }
+            if (holder >= 0) Turning.Remove(hands[holder].controller);
             holder = -1;
         }
 
@@ -97,12 +102,15 @@ namespace SkeletonMaker
             if (Vector3.Distance(hand, col.ClosestPoint(hand)) > grabRadius) return;
 
             holder = index;
+            Turning.Add(hands[index].controller);
             prevRotation = hands[index].controller.rotation;
         }
 
         private void OnLetGo(int index)
         {
-            if (holder == index) holder = -1;
+            if (holder != index) return;
+            Turning.Remove(hands[index].controller);
+            holder = -1;
         }
 
         private void Update()
@@ -143,7 +151,7 @@ namespace SkeletonMaker
         }
 
         /// <summary>The part of rotation q that is a turn about the given world axis, in degrees (-180..180).</summary>
-        private static float TwistDegrees(Quaternion q, Vector3 axis)
+        internal static float TwistDegrees(Quaternion q, Vector3 axis)
         {
             if (q.w < 0f) q = new Quaternion(-q.x, -q.y, -q.z, -q.w);
             float along = q.x * axis.x + q.y * axis.y + q.z * axis.z;

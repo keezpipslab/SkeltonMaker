@@ -114,3 +114,6 @@ InitTestScene*.unity*
 
 # Meta Immersive Debugger dev agent: this PC's address and an access token
 /[Aa]ssets/Resources/DevAgentSettings.asset*
+
+# What the designer scene exports (.obj)
+/Exports/

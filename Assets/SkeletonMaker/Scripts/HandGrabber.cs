@@ -82,8 +82,11 @@ namespace SkeletonMaker
 
             if (best != null)
             {
-                if (DuplicateAction.IsPressed() && best.TryGetComponent(out SkeletonPlacement placement))
-                    best = placement.DuplicateForGrab();
+                if (DuplicateAction.IsPressed())
+                {
+                    if (best.TryGetComponent(out SkeletonPlacement placement)) best = placement.DuplicateForGrab();
+                    else if (best.TryGetComponent(out WorldElement placed)) best = placed.DuplicateForGrab();
+                }
 
                 held = best;
                 held.Grab(transform);
