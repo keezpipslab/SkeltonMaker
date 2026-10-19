@@ -616,7 +616,9 @@ worktree kept on the Android build target, so this one never leaves Windows (swi
 make Editor Play over Link run with the Android settings):
 
 1. commit here, then in the copy: `git checkout --detach main`;
-2. `unity build <copy> --target Android --execute-method SkeletonMaker.QuestBuildMenu.Build`
+2. `unity build <copy> --target Android --execute-method SkeletonMaker.QuestBuildMenu.Build`, or in
+   the copy's editor `SkeletonMaker > Build (And Run) Quest Standalone` - not File > Build And Run,
+   which builds the Build Settings list (SkeletonBuilder, with the raymarching)
    (the apk lands in `Builds/Quest/` in the copy);
 3. install it with the Quest on USB: `adb install -r Builds/Quest/SkeletonMaker.apk`, and start it
    from the library's Unknown Sources.

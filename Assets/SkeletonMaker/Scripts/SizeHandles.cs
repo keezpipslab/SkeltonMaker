@@ -72,8 +72,7 @@ namespace SkeletonMaker
                 Destroy(cube.GetComponent<Collider>());
                 cube.transform.SetParent(transform, false);
 
-                var material = cube.GetComponent<MeshRenderer>().material; // the pipeline's default, so it draws in URP
-                material.color = i == Corner ? cornerColor : axisColor;
+                RuntimeMaterial.Apply(cube.GetComponent<MeshRenderer>(), i == Corner ? cornerColor : axisColor);
 
                 cube.SetActive(false);
                 handles[i] = cube.transform;
@@ -97,7 +96,7 @@ namespace SkeletonMaker
             Destroy(disk.GetComponent<Collider>());
             disk.transform.SetParent(dialSpin, false);
             disk.transform.localScale = new Vector3(1.4f, 0.12f, 1.4f);
-            disk.GetComponent<MeshRenderer>().material.color = dialColor;
+            RuntimeMaterial.Apply(disk.GetComponent<MeshRenderer>(), dialColor);
 
             var indicator = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             indicator.name = "Indicator";
@@ -105,7 +104,7 @@ namespace SkeletonMaker
             indicator.transform.SetParent(dialSpin, false);
             indicator.transform.localPosition = new Vector3(0f, 0.15f, 0.48f);
             indicator.transform.localScale = Vector3.one * 0.3f;
-            indicator.GetComponent<MeshRenderer>().material.color = dialIndicatorColor;
+            RuntimeMaterial.Apply(indicator.GetComponent<MeshRenderer>(), dialIndicatorColor);
 
             var labelObject = new GameObject("Value Label");
             labelObject.transform.SetParent(dial, false);

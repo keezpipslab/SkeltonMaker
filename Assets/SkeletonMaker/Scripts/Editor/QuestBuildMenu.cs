@@ -23,17 +23,30 @@ namespace SkeletonMaker
         [MenuItem("SkeletonMaker/Build Quest Standalone")]
         private static void BuildFromMenu()
         {
-            if (EditorUserBuildSettings.activeBuildTarget != BuildTarget.Android)
-            {
-                EditorUtility.DisplayDialog("Build Quest Standalone",
-                    "This project is on " + EditorUserBuildSettings.activeBuildTarget + ". Build the Quest app from the Android copy of the project, so this one stays on Windows for Link.", "OK");
-                return;
-            }
-            Build();
+            if (OnAndroid()) Build();
+        }
+
+        [MenuItem("SkeletonMaker/Build And Run Quest Standalone")]
+        private static void BuildAndRunFromMenu()
+        {
+            if (OnAndroid()) BuildWith(BuildOptions.AutoRunPlayer);
+        }
+
+        // File > Build And Run would build the Build Settings list (SkeletonBuilder,
+        // raymarch and all); these build the No Raymarch scene only.
+        private static bool OnAndroid()
+        {
+            if (EditorUserBuildSettings.activeBuildTarget == BuildTarget.Android) return true;
+            EditorUtility.DisplayDialog("Build Quest Standalone",
+                "This project is on " + EditorUserBuildSettings.activeBuildTarget + ". Build the Quest app from the Android copy of the project, so this one stays on Windows for Link.", "OK");
+            return false;
         }
 
         /// <summary>Builds the apk. Exits with 1 when it fails in batch mode.</summary>
-        public static void Build()
+        public static void Build() => BuildWith(BuildOptions.None);
+
+        /// <summary>AutoRunPlayer installs it on the Quest on USB and starts it.</summary>
+        public static void BuildWith(BuildOptions extra)
         {
             var options = new BuildPlayerOptions
             {
@@ -41,6 +54,7 @@ namespace SkeletonMaker
                 locationPathName = ApkPath,
                 target = BuildTarget.Android,
                 targetGroup = BuildTargetGroup.Android,
+                options = extra,
             };
             BuildReport report = BuildPipeline.BuildPlayer(options);
             if (report.summary.result == BuildResult.Succeeded)

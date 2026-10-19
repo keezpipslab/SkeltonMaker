@@ -613,7 +613,7 @@ namespace SkeletonMaker
             var marker = jointSpheres[slot];
             marker.transform.position = hingeJointAnchors[jointIndex].position;
             marker.transform.localScale = Vector3.one * jointSphereDiameter;
-            marker.material.color = color; // the pipeline's default, so it draws in URP
+            RuntimeMaterial.Apply(marker, color);
             marker.gameObject.SetActive(true);
         }
 
