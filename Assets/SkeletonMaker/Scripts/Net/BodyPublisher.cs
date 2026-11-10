@@ -54,6 +54,7 @@ namespace SkeletonMaker
         private int sequence;
         private float nextSlow;
         private int sentRestVersion = int.MinValue;
+        private IAvatarPoseSource sentRestSource;
         private Vector3 sentShift;
 
         private SkeletonComposition composition;
@@ -79,7 +80,8 @@ namespace SkeletonMaker
             if (source != null) SendPose(link, performerId, source, toStagePosition, toStageRotation);
 
             float now = Time.unscaledTime;
-            bool restChanged = source != null && source.RestVersion != sentRestVersion;
+            // A switch between the dance and the tracked body is a new rest pose, whatever its version.
+            bool restChanged = source != null && (source != sentRestSource || source.RestVersion != sentRestVersion);
             if (now < nextSlow && !restChanged && !compositionChanged && shift == sentShift) return;
             nextSlow = now + SlowInterval;
             compositionChanged = false;
@@ -89,6 +91,7 @@ namespace SkeletonMaker
             {
                 SendRest(link, performerId, source);
                 sentRestVersion = source.RestVersion;
+                sentRestSource = source;
             }
 
             int count = composition != null ? composition.elements.Count : 0;

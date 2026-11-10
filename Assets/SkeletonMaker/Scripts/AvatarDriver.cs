@@ -30,6 +30,13 @@ namespace SkeletonMaker
             placementTarget = target;
         }
 
+        /// <summary>Where Place put the source's body in the scene: world = rotation * p + position.</summary>
+        public void GetPlacement(out Vector3 position, out Quaternion rotation)
+        {
+            rotation = placementRotation;
+            position = placementTarget - placementRotation * placementPivot;
+        }
+
         /// <summary>Drops the calibration, so the next EnsureCalibrated redoes it.</summary>
         public void Forget() => calibratedSource = null;
 

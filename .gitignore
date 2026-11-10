@@ -117,3 +117,6 @@ InitTestScene*.unity*
 
 # What the designer scene exports (.obj)
 /Exports/
+
+# What differs between the two PCs of a two-PC performance (deploy.ps1 writes it)
+/ThisPc.json

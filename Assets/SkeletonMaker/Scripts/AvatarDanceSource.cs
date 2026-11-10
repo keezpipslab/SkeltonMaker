@@ -35,6 +35,9 @@ namespace SkeletonMaker
 
         private bool activeEmbodied;
 
+        // What the stand-in followed this frame (null when it stood still), for BodySender.
+        private IAvatarPoseSource drivenBy;
+
         // The skeleton that is built on: the still pose is read off it, also in
         // the stages where it is switched off (Join).
         private SkeletonRig mainRig;
@@ -109,6 +112,7 @@ namespace SkeletonMaker
                 ShowHeadPrimitives(true); // off again below once the avatar is actually on the player
             }
 
+            drivenBy = null;
             var source = ActiveSource();
             if (source == null || !source.Refresh())
             {
@@ -122,6 +126,18 @@ namespace SkeletonMaker
             if (embodied ? !PlaceOnPlayer() : !placed && !Place(source)) { DriveFromRestPose(); return; }
             ShowHeadPrimitives(!embodied);
             driver.Drive(source, standInRoot);
+            drivenBy = source;
+        }
+
+        /// <summary>The body the stand-in moves with this frame - the dance or the
+        /// tracked body - and where its joints are put in the scene (world =
+        /// rotation * joint + position), so it can be sent exactly as it is
+        /// shown here. False while the avatar stands still.</summary>
+        public bool TryGetLiveBody(out IAvatarPoseSource source, out Vector3 position, out Quaternion rotation)
+        {
+            source = isActiveAndEnabled ? drivenBy : null;
+            driver.GetPlacement(out position, out rotation);
+            return source != null;
         }
 
         // Whatever is built on the head would sit around the player's eyes once worn. Switched off

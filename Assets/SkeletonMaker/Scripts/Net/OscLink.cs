@@ -79,6 +79,13 @@ namespace SkeletonMaker
         // Remote Host "auto": the address the latest datagram came from (set on the receive thread).
         private volatile IPAddress heardFrom;
 
+        // Two PCs running the same scene: what differs between them comes from ThisPc.json.
+        private void Awake()
+        {
+            if (ThisPc.TryGetPerformerId(out int id)) performerId = id;
+            if (ThisPc.TryGetRemoteHost(out string host)) remoteHost = host.Trim();
+        }
+
         private void OnEnable()
         {
             try

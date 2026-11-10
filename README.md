@@ -602,10 +602,42 @@ the skeleton built on it, and show the other one as a line skeleton wearing ghos
 `SkeletonMaker > Add Shared Stage` adds everything below; `SkeletonMaker > Check OSC Codec` writes
 and reads back a test message.
 
-**Setting up two PCs**: on the `Shared Stage` object's `OscLink`, give each PC its own
-**Performer Id** and the other PC's address as **Remote Host** (same port on both, UDP 9000 by
-default, which the firewall has to let in). Your body is sent while the avatar is in Tracking mode;
-the built skeleton is sent all the time.
+**Two PCs, each with a headset on Link** (the full app on both - tutorial, building from
+primitives, the raymarched view): both run the same `SkeletonBuilder.unity` from the same commit.
+What differs between them is not in the scene but in `ThisPc.json`, next to `Assets` and not in
+git, read on every Play (`ThisPc`; the console says what it used):
+
+```json
+{ "performerId": 2, "remoteHost": "192.168.2.20", "stageShift": { "x": 1, "y": 0, "z": 0 } }
+```
+
+It overrides the `OscLink`'s **Performer Id** and **Remote Host** and the `StageFrame`'s **Stage
+Shift**; a field left out keeps the scene's. Without the file a PC runs as the scene says. The
+scripts at the project root set the second PC up the way Kit does:
+
+1. On the second PC, as administrator, once: `setup-pc2.ps1 -Key "<this PC's ~/.ssh/id_ed25519.pub>"`.
+   It turns on its SSH server, lets this PC's key in, allows UDP 9000 (OSC) and 9763 (Xsens) through
+   the firewall and clones the project to `C:\Unity\SkeletonMaker`. Open it there once in Unity
+   6000.3.22f1 to import. Add it to `~/.ssh/config` here as `Host pc2`, as the script says.
+2. On this PC, once: `setup-pc2.ps1 -FirewallOnly`. Both runs warn about a Block rule Windows keeps
+   for the Unity editor on Public networks, which wins over any allow rule; `-UnblockUnity` switches
+   it off.
+3. After every commit: `.\deploy.ps1` here. It pushes, sends the commits to the other PC over SSH (a
+   git bundle; it has no GitHub login there) and writes `ThisPc.json` on whichever side lacks one:
+   this PC performer 1, the other performer 2, each with the other's address, shifted -1 and +1 m
+   on x. `-Settings` writes both again (after an address changed); `-Shift 0` with it puts every
+   skeleton on its real performer. Stop Play on the other PC first; its editor compiles when its
+   window gets focus.
+
+Then on both: Link fully up, Play. Each builds their own skeleton on their own PC; the other
+performer appears in Join and Together Math, wearing what they built (the built skeleton is sent all
+the time).
+
+**The body that is sent** (`BodySender`): the tracked body - Meta's body tracking, or the Xsens
+suit through `BodyInput` - while it is tracked, where the performer really stands. While it isn't
+(the avatar in Animation mode), the avatar's dance is sent instead, where that avatar dances, so
+the other side sees the same motion-captured movement you do; **Send Dance** off sends only a
+tracked body. A standing-still avatar sends no body, and the other side then hides it.
 
 **A PC on Link with a standalone Quest**: the second performer can be a Quest running the No
 Raymarch scene as an app of its own (`SkeletonMaker > Build Quest Standalone`, `QuestBuildMenu`).
@@ -675,7 +707,8 @@ elements of the `state`'s revision have arrived.
 - `OscCodec` - `OscWriter` / `OscMessage`: int, float and string arguments, bundles read.
 - `OscLink` - the UDP socket; `Received` hands messages out on the main thread. Has a simulated
   **Delay / Jitter / Loss** for what comes in.
-- `BodySender` / `BodyPublisher` - the local body and skeleton, out.
+- `BodySender` / `BodyPublisher` - the local body (tracked, or else the avatar's dance) and skeleton, out.
+- `ThisPc` - `ThisPc.json`, what differs between the two PCs (see above).
 - `BodyReceiver` / `RemoteSkeleton` / `NetworkPoseSource` - one remote skeleton per performer id,
   made on the first message and removed after 5 s of silence; hidden when no pose has arrived for 1 s.
   Its ghosts come from `AvatarDuplicateManager.BuildGhost` and it is added to the Raymarch Quad's

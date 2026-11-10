@@ -26,6 +26,11 @@ namespace SkeletonMaker
         /// <summary>This performer's own shift (zero without a StageFrame).</summary>
         public static Vector3 LocalShift => Instance != null ? Instance.stageShift : Vector3.zero;
 
+        private void Awake()
+        {
+            if (ThisPc.TryGetStageShift(out Vector3 shift)) stageShift = shift;
+        }
+
         private void OnEnable() => Instance = this;
 
         private void OnDisable()
