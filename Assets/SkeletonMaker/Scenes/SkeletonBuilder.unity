@@ -4101,7 +4101,7 @@ MonoBehaviour:
   - {r: 1, g: 0.6, b: 0.45, a: 1}
   forgetAfter: 5
   echoShift: {x: 0, y: 0, z: 1.5}
-  stagesShown: 030000000400000005000000
+  stagesShown: 000000000100000002000000030000000400000005000000
 --- !u!114 &341357701
 MonoBehaviour:
   m_ObjectHideFlags: 0

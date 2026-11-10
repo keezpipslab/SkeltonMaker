@@ -106,10 +106,10 @@ listing it is current, and anything listed nowhere (XR rig, table, managers) is 
   object), the color baths and the skeleton they were hung on are gone, leaving the avatar wearing
   what was built, the smoothing knob, the mode buttons and the Hide button. The quad starts on your head, so
   everything is seen raymarched (see Head view; take it off as usual, and it goes back to where it
-  stood when the stage ends). And the other performer appears: this is the only stage, apart from
-  Record, in which anyone else is on the stage - `BodyReceiver` drops whatever comes in during the
-  others (its **Stages Shown**). The avatar is put in Tracking mode
-  for as long as the stage lasts, since your body is only sent while it is tracked, and gets its
+  stood when the stage ends). The other performer is here as in every stage (from another PC
+  they are there while you build too; `BodyReceiver`'s **Stages Shown** lists the stages, and drops
+  whatever comes in during the others). The avatar is put in Tracking mode
+  for as long as the stage lasts, so your tracked body is sent, and gets its
   old mode back afterwards. With nobody on the other end (the `OscLink`'s Remote Host is this PC)
   the other performer is your own recording, or the dancing fake peer until you have made one -
   see `TestPartner` below.
@@ -629,9 +629,9 @@ scripts at the project root set the second PC up the way Kit does:
    skeleton on its real performer. Stop Play on the other PC first; its editor compiles when its
    window gets focus.
 
-Then on both: Link fully up, Play. Each builds their own skeleton on their own PC; the other
-performer appears in Join and Together Math, wearing what they built (the built skeleton is sent all
-the time).
+Then on both: Link fully up, Play. Each builds their own skeleton on their own PC, and sees the
+other one throughout - from the tutorial on - wearing what they have built so far (the built
+skeleton is sent every second and whenever it changes), dancing or tracked like their avatar.
 
 **The body that is sent** (`BodySender`): the tracked body - Meta's body tracking, or the Xsens
 suit through `BodyInput` - while it is tracked, where the performer really stands. While it isn't
@@ -731,7 +731,8 @@ elements of the `state`'s revision have arrived.
 
 Leave **Remote Host** on 127.0.0.1 so everything sent comes straight back in.
 
-Other performers only show in the Join, Together Math and Record stages.
+Other performers show in every stage, but the recording and the fake peer are only brought on in
+Join, Together Math and Record.
 
 1. **Record and replay**: H, then A (or R) to record yourself and A again to save. From then on
    that recording is who you meet in Join.
