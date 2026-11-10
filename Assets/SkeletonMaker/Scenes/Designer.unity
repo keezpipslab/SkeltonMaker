@@ -805,6 +805,10 @@ PrefabInstance:
       propertyPath: m_IsActive
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 3742546662540764109, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 4778211696441940833, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
       propertyPath: m_TeleportMode
       value: 
@@ -2400,6 +2404,7 @@ MonoBehaviour:
   maxSteps: 64
   smoothing: 0.089
   inflate: 0
+  unitScale: 1
   combine: 2
   repeat: 0
   repeatDistance: 20
@@ -3096,6 +3101,8 @@ MonoBehaviour:
   reach: 0.06
   axisColor: {r: 0.9, g: 0.9, b: 0.9, a: 1}
   cornerColor: {r: 0.9, g: 0.25, b: 0.2, a: 1}
+  dialColor: {r: 0.18, g: 0.2, b: 0.26, a: 1}
+  dialIndicatorColor: {r: 1, g: 0.75, b: 0.2, a: 1}
   hoverScale: 1.4
   flipMargin: 0.25
 --- !u!1 &1907707079

@@ -21,6 +21,18 @@ namespace SkeletonMaker
 
         public bool GripPressed => selectAction != null && selectAction.action.IsPressed();
 
+        /// <summary>True on the left controller: its grip is bound to the left hand.</summary>
+        public bool IsLeft
+        {
+            get
+            {
+                if (selectAction == null) return false;
+                foreach (var binding in selectAction.action.bindings)
+                    if (binding.effectivePath != null && binding.effectivePath.Contains("{LeftHand}")) return true;
+                return false;
+            }
+        }
+
         // A on the right controller, held while grabbing with either hand:
         // take a copy and leave the original where it is. Built here rather
         // than wired in the scene, as both hands share the one modifier.

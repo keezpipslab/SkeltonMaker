@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.Rendering;
 
 namespace SkeletonMaker
 {
@@ -13,7 +14,9 @@ namespace SkeletonMaker
     /// While it is in a hand: B (right controller) deletes it, A (right
     /// controller) leaves a copy where it is just now, and Y (left
     /// controller) switches it between adding to the world and being carved
-    /// out of it. A carving primitive's mesh has the Subtract Color.
+    /// out of it. A carving primitive's mesh has the Subtract Color and is
+    /// see-through, so the hole it makes shows through it. Small
+    /// words by those buttons say so (ControllerButtonLabels).
     ///
     /// Each has a smoothing of its own, which comes on top of the raymarch
     /// quad's: how much further (or less far, below zero) this primitive
@@ -43,6 +46,9 @@ namespace SkeletonMaker
         [Tooltip("Added to the raymarch quad's smoothing for this primitive alone (meters).")]
         [SerializeField] private float smoothing;
         [SerializeField] private Color subtractColor = new Color(0.95f, 0.2f, 0.15f);
+        [Range(0f, 1f)]
+        [Tooltip("How much of a carving primitive's mesh is drawn: 0 not at all, 1 solid.")]
+        [SerializeField] private float subtractOpacity = 0.25f;
 
         private Grabbable grabbable;
         private MeshRenderer visual;
@@ -144,6 +150,40 @@ namespace SkeletonMaker
             var renderer = Visual();
             if (renderer == null) return;
 
+            if (SolidSubtract)
+            {
+                ApplyTintBeforeLabels(renderer);
+                return;
+            }
+
+            // A copy of a carving primitive comes with the see-through material already.
+            var solid = renderer.sharedMaterial;
+            if (solid != null && SolidOf.TryGetValue(solid, out var original)) solid = original;
+
+            if (!subtract)
+            {
+                renderer.sharedMaterial = solid;
+                renderer.SetPropertyBlock(null);
+                return;
+            }
+
+            if (solid != null) renderer.sharedMaterial = SeeThrough(solid);
+
+            Color tint = subtractColor;
+            tint.a = subtractOpacity;
+
+            block ??= new MaterialPropertyBlock();
+            block.SetColor(BaseColorId, tint);
+            renderer.SetPropertyBlock(block);
+        }
+
+        /// <summary>Set by BeforeLabelsMode: carving primitives keep their solid
+        /// material, only tinted, as they were before they became see-through.</summary>
+        public static bool SolidSubtract;
+
+        // The tint as it was before the see-through carving primitives, kept to compare with.
+        private void ApplyTintBeforeLabels(MeshRenderer renderer)
+        {
             if (!subtract)
             {
                 renderer.SetPropertyBlock(null);
@@ -158,6 +198,34 @@ namespace SkeletonMaker
             block ??= new MaterialPropertyBlock();
             block.SetColor(BaseColorId, tint);
             renderer.SetPropertyBlock(block);
+        }
+
+        // One see-through version of each material, shared by every carving
+        // primitive that has it, and the way back to the solid one.
+        private static readonly Dictionary<Material, Material> SeeThroughOf = new Dictionary<Material, Material>();
+        private static readonly Dictionary<Material, Material> SolidOf = new Dictionary<Material, Material>();
+
+        /// <summary>This URP Lit material made transparent: drawn after the raymarch
+        /// quad, without hiding what is behind it.</summary>
+        private static Material SeeThrough(Material solid)
+        {
+            if (SeeThroughOf.TryGetValue(solid, out var made) && made != null) return made;
+
+            made = new Material(solid) { name = solid.name + " (See-Through)" };
+            made.SetFloat("_Surface", 1f);
+            made.SetFloat("_Blend", 0f);
+            made.SetFloat("_SrcBlend", (float)BlendMode.SrcAlpha);
+            made.SetFloat("_DstBlend", (float)BlendMode.OneMinusSrcAlpha);
+            made.SetFloat("_SrcBlendAlpha", (float)BlendMode.One);
+            made.SetFloat("_DstBlendAlpha", (float)BlendMode.OneMinusSrcAlpha);
+            made.SetFloat("_ZWrite", 0f);
+            made.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            made.SetOverrideTag("RenderType", "Transparent");
+            made.renderQueue = (int)RenderQueue.Transparent;
+
+            SeeThroughOf[solid] = made;
+            SolidOf[made] = solid;
+            return made;
         }
 
         private MeshRenderer Visual()

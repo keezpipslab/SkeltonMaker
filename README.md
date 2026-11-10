@@ -184,7 +184,8 @@ the start; take it off with the left grip at your head, as elsewhere.
   panel are not part of the world: they are not raymarched and not exported.
 - **While a primitive is in a hand**: **B** deletes it, **A** leaves a copy where it is just now
   (and holding **A** while squeezing the grip takes a copy, as on the skeleton), **Y** switches it
-  between adding and subtracting. Resizing is as elsewhere: the size cubes, or the thumbsticks.
+  between adding and subtracting. While one is held, small words by those buttons on the
+  controllers say what each will do. Resizing is as elsewhere: the size cubes, or the thumbsticks.
 - **Subtract**: a subtracting primitive is carved out of all the others, wherever it is: the world
   is the smooth union of what adds, minus the smooth union of what subtracts (the quad's **Combine**
   is on Subtract B here, and a subtracting primitive is in group B). Its mesh is red.

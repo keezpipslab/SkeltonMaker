@@ -17,6 +17,7 @@ Shader "SkeletonMaker/RaymarchQuad"
         [Toggle] _ClipBackground ("Clip Background (cutout: only the shapes are drawn)", Float) = 0
         [Toggle] _StartAtSurface ("Start Rays At Quad Surface (hide anything in front of the quad)", Float) = 1
         [Enum(UnityEngine.Rendering.CullMode)] _Cull ("Cull", Float) = 0
+        _DepthBias ("Depth Bias (meters the shapes win by against their own meshes)", Float) = 0.004
     }
 
     SubShader
@@ -75,6 +76,7 @@ Shader "SkeletonMaker/RaymarchQuad"
             float4 _RMQ_SceneBounds;                     // bounding sphere around every shape
 
             int _RMQ_MaxSteps;
+            float _DepthBias;
             float _RMQ_Smoothing;                        // the blend radius everything has; each shape's own (in its params) comes on top
             float _RMQ_WidestOwn;                        // the largest own smoothing of any shape
             float _RMQ_Inflate;                          // subtracted from the scene distance (d - c)
@@ -530,17 +532,25 @@ Shader "SkeletonMaker/RaymarchQuad"
                 return OUT;
             }
 
-            float4 Background()
+            // The background stays where the quad is, as a window would.
+            float4 Background(Varyings IN, out float depth)
             {
+                depth = IN.positionCS.z;
                 if (_ClipBackground > 0.5) discard;
                 return float4(_RMQ_BackgroundColor, 1.0);
             }
 
-            float4 Frag(Varyings IN) : SV_Target
+            // Writes the depth of the point the ray hit rather than of the
+            // quad, so whatever is nearer the eye than the shapes - the
+            // controllers, their labels, a held primitive - is drawn in front
+            // of them even with the quad on the head. Early depth testing is
+            // lost, but with the quad drawn after the opaque scene and in
+            // front of all of it, it never skipped a pixel anyway.
+            float4 Frag(Varyings IN, out float depth : SV_Depth) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(IN);
 
-                if (_RMQ_ShapeCount <= 0) return Background();
+                if (_RMQ_ShapeCount <= 0) return Background(IN, depth);
 
                 // _WorldSpaceCameraPos is the current eye's position under
                 // single-pass instanced stereo.
@@ -555,9 +565,9 @@ Shader "SkeletonMaker/RaymarchQuad"
                 float2 range;
                 if (repeating) range = RepeatRange(eye, rd);
                 else range = ShapesRange(eye, rd);
-                if (range.y < range.x) return Background();
+                if (range.y < range.x) return Background(IN, depth);
                 float tStart = max(range.x, _StartAtSurface > 0.5 ? surfaceDist : 0.0);
-                if (range.y < tStart) return Background();
+                if (range.y < tStart) return Background(IN, depth);
 
                 float t = tStart;
                 bool hit = false;
@@ -570,9 +580,15 @@ Shader "SkeletonMaker/RaymarchQuad"
                     t += d;
                     if (t > range.y) break;
                 }
-                if (!hit) return Background();
+                if (!hit) return Background(IN, depth);
 
                 float3 p = eye + rd * t;
+                // A little nearer than the hit, so a primitive's mesh, which lies
+                // on (or just inside) its raymarched surface, doesn't flicker
+                // through it: the mesh only shows where it really is in front.
+                float4 hitCS = TransformWorldToHClip(eye + rd * max(t - _DepthBias, 0.0));
+                depth = hitCS.z / hitCS.w;
+
                 float3 albedo;
                 SceneDistAndColor(p, albedo);
                 float3 n = EstimateNormal(p);

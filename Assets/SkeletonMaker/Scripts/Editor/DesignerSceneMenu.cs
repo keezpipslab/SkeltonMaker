@@ -87,6 +87,7 @@ namespace SkeletonMaker
 
             var world = new GameObject("World").AddComponent<DesignWorld>();
             world.gameObject.AddComponent<WorldGrab>();
+            new GameObject("Controller Button Labels").AddComponent<ControllerButtonLabels>();
             var soWorld = new SerializedObject(world);
             soWorld.FindProperty("quad").objectReferenceValue = quad;
             var soPrefabs = soWorld.FindProperty("elementPrefabs"); // what Load rebuilds a saved world from
